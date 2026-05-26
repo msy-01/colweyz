@@ -45,13 +45,15 @@ function buildSyncContext(
   collectionName: string,
   doc: FirebaseFirestore.QueryDocumentSnapshot
 ): SyncContext {
+  const firestoreUpdateTime = doc.updateTime ? doc.updateTime.toDate().toISOString() : null;
   if (collectionName === 'settings') {
-    return { collectionName, docId: 'global', docPath: doc.ref.path };
+    return { collectionName, docId: 'global', docPath: doc.ref.path, firestoreUpdateTime };
   }
   return {
     collectionName,
     docId: doc.id,
     docPath: doc.ref.path,
+    firestoreUpdateTime,
   };
 }
 

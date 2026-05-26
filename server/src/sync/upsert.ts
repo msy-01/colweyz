@@ -15,6 +15,8 @@ export type SyncContext = {
   collectionName: string;
   docId: string;
   docPath?: string;
+  /** updateTime Firestore (metadata), ISO string */
+  firestoreUpdateTime?: string | null;
 };
 
 export async function processUpsert(
@@ -36,10 +38,14 @@ export async function processUpsert(
     return;
   }
 
-  const sourceUpdatedAt =
+  const sourceUpdatedAtRaw =
     collectionName === 'purchase_orders'
       ? getPurchaseOrderSourceUpdatedAt(data)
       : getSourceUpdatedAt(data);
+  // IMPORTANT:
+  // Certaines écritures Firestore (ancienne app) ne mettent pas toujours à jour `updatedAt`.
+  // Pour éviter de devoir relancer `resync --force`, on fallback sur le metadata Firestore.
+  const sourceUpdatedAt = sourceUpdatedAtRaw || ctx.firestoreUpdateTime || null;
   const fcMeta =
     collectionName === 'financial_configs'
       ? resolveFinancialConfigMeta(docId, data, ctx.docPath)
