@@ -1,0 +1,24 @@
+HTTP/2 307 
+content-type: text/html; charset=UTF-8
+x-robots-tag: noindex, nofollow, nosnippet
+cache-control: no-cache, no-store, max-age=0, must-revalidate
+pragma: no-cache
+expires: Mon, 01 Jan 1990 00:00:00 GMT
+date: Tue, 19 May 2026 22:31:12 GMT
+location: https://doc-04-6o-sheets.googleusercontent.com/export/54bogvaave6cua4cdnls17ksc4/lnnlnaite6n0a93d1meivvpj44/1779229870000/115231909594202736260/*/1nOU1d9ZWQv8JyIAP6vF5QbPVIndTy2-nftv_iCO8-RQ?format=csv
+p3p: CP="This is not a P3P policy! See g.co/p3phelp for more info."
+content-security-policy: require-trusted-types-for 'script';report-uri https://csp.withgoogle.com/csp/docs-tt
+content-security-policy: frame-ancestors 'self' https://docs.google.com
+content-security-policy: base-uri 'self';object-src 'self';report-uri https://docs.google.com/spreadsheets/cspreport;script-src 'nonce-tIiyD9c7-JgbVmAzLIJVRQ' 'unsafe-inline' 'strict-dynamic' https: http: 'unsafe-eval';worker-src 'self' blob:
+x-frame-options: ALLOW-FROM https://docs.google.com
+referrer-policy: origin
+x-content-type-options: nosniff
+x-xss-protection: 1; mode=block
+server: GSE
+set-cookie: COMPASS=apps-spreadsheets=CmUACWuJV-mHXFCtu9YmkbUTERkf8IhWFHcksSnDn6-FsoCfiewc2rsGLFyCzxBYfvs4_cd-vFGHZdKwg6fLTH0055Ab_x2JZJjK6W8ilEVg1CmuI1JKGImb3KKAzoQJhlX4Bh1DQxDA5bPQBhp2AAlriVdBCNQuXaB5ESgy5JPV5pXGXLgCgCD9o4GuhYgRo9Ihf7fIiZhZaNtyfBA9kUqi0tmpP9guyeynoQs9zyx_qfquzXlfFXHTV2-hoNeaHjqsWCRyogsmtuvgdIWjix5alhiSeMKIksElAhWzOV99rc-0hg==; Domain=.docs.google.com; Expires=Tue, 19-May-2026 23:31:12 GMT; Path=/spreadsheets/d/1nOU1d9ZWQv8JyIAP6vF5QbPVIndTy2-nftv_iCO8-RQ; Secure; HttpOnly; SameSite=none
+set-cookie: NID=531=b-s2ZFpuAZrgii2vYM4Holgvd782DoTwU3dRlq6xbGn5YzTixEdNv0U-umxmQ7mNLB60L-Sz7rbB3EqE-9D1EUkZSvNfc1-PxSzU_yhAXdvI3IzUiRJGNkJy7z7AB1uv7aGqeSeOT4PMRg4IMYtxB08mQj-gmTFnzSO69K4HITpL5SlclZwJLG8meRBcG5zw3zkFSE0; expires=Wed, 18-Nov-2026 22:31:12 GMT; path=/; domain=.google.com; HttpOnly
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+accept-ranges: none
+vary: Accept-Encoding
+x-l2-request-path: l2-managed-6
+

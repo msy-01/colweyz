@@ -1,0 +1,274 @@
+{
+  "entities": {
+    "Zone": {
+      "title": "Zone",
+      "description": "Delivery zone",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "rate": { "type": "number" },
+        "type": { "type": "string", "enum": ["local", "regional"] }
+      },
+      "required": ["id", "name", "rate", "type"]
+    },
+    "Driver": {
+      "title": "Driver",
+      "description": "Delivery driver",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "initialBalance": { "type": "number" },
+        "status": { "type": "string", "enum": ["disponible", "occupé"] },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "stock": { "type": "object" }
+      },
+      "required": ["id", "name", "phone", "initialBalance", "status"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "address": { "type": "string" },
+        "productDetails": { "type": "string" },
+        "productId": { "type": "string" },
+        "products": { "type": "array" },
+        "amount": { "type": "number" },
+        "deliveryCost": { "type": "number" },
+        "status": { "type": "string" },
+        "zoneId": { "type": "string" },
+        "driverId": { "type": "string" },
+        "remuneration": { "type": "number" },
+        "assignedAt": { "type": "string" },
+        "deliveredAt": { "type": "string" },
+        "postponedAt": { "type": "string" },
+        "scheduledAt": { "type": "string" },
+        "refusedBy": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "cancelReason": { "type": "string" },
+        "shippingFee": { "type": "number" },
+        "isPrePaid": { "type": "boolean" },
+        "regionalPaymentStatus": { "type": "string" },
+        "logs": { "type": "array" },
+        "importedAt": { "type": "string" },
+        "purchaseCost": { "type": "number" }
+      },
+      "required": ["id", "date", "clientName", "address", "amount", "status"]
+    },
+    "FundRequest": {
+      "title": "FundRequest",
+      "description": "Fund request from driver",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "driverId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "confirmedAt": { "type": "string" },
+        "paymentMethod": { "type": "string" }
+      },
+      "required": ["id", "driverId", "amount", "status", "createdAt"]
+    },
+    "SystemUser": {
+      "title": "SystemUser",
+      "description": "System user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["super_admin", "staff"] },
+        "permissions": { "type": "array" }
+      },
+      "required": ["id", "username", "role", "permissions"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global application settings",
+      "type": "object",
+      "properties": {
+        "adminPhone": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "shopifyDomain": { "type": "string" },
+        "shopifyAccessToken": { "type": "string" }
+      },
+      "required": ["adminPhone"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Shopify product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "vendor": { "type": "string" },
+        "productType": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "tags": { "type": "array" },
+        "variants": { "type": "array" },
+        "images": { "type": "array" },
+        "status": { "type": "string" },
+        "totalInventory": { "type": "number" },
+        "mainStock": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "purchasePrice": { "type": "number" }
+      },
+      "required": ["id", "title", "createdAt", "updatedAt", "tags", "variants", "images", "status"]
+    },
+    "ProductFinancialConfig": {
+      "title": "ProductFinancialConfig",
+      "description": "Financial configuration for a product",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "cau": { "type": "number" },
+        "appro": { "type": "number" },
+        "dailyBudgetUsd": { "type": "number" },
+        "isCampaignActive": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["productId", "cau", "appro", "dailyBudgetUsd", "updatedAt"]
+    },
+    "DailyFinancialEntry": {
+      "title": "DailyFinancialEntry",
+      "description": "Daily financial entry",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "exchangeRate": { "type": "number" },
+        "entries": { "type": "object" },
+        "productOrder": { "type": "array" }
+      },
+      "required": ["date", "exchangeRate", "entries"]
+    },
+    "DailyFinanceData": {
+      "title": "DailyFinanceData",
+      "description": "Daily finance data",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "otherRevenues": { "type": "array" },
+        "otherExpenses": { "type": "array" }
+      },
+      "required": ["date", "otherRevenues", "otherExpenses"]
+    },
+    "PurchaseOrder": {
+      "title": "PurchaseOrder",
+      "description": "Purchase order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "number": { "type": "string" },
+        "date": { "type": "string" },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "transportFees": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "validatedAt": { "type": "string" },
+        "paidAt": { "type": "string" },
+        "deliveredAt": { "type": "string" },
+        "documents": { "type": "array" },
+        "source": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "linkedOrderIds": { "type": "array" }
+      },
+      "required": ["id", "number", "date", "items", "totalAmount", "status", "createdAt"]
+    },
+    "ClaudeAnalysis": {
+      "title": "ClaudeAnalysis",
+      "description": "Claude analysis",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "analysis": { "type": "string" }
+      },
+      "required": ["date", "analysis"]
+    },
+    "AccountingEntry": {
+      "title": "AccountingEntry",
+      "description": "Accounting entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "pieceNumber": { "type": "string" },
+        "label": { "type": "string" },
+        "lines": { "type": "array" },
+        "isManual": { "type": "boolean" },
+        "origine": { "type": "string" },
+        "modifiable": { "type": "boolean" },
+        "attachmentUrl": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "date", "pieceNumber", "label", "lines", "isManual", "createdAt"]
+    }
+  },
+  "firestore": {
+    "zones": {
+      "schema": { "$ref": "#/entities/Zone" },
+      "description": "Delivery zones"
+    },
+    "drivers": {
+      "schema": { "$ref": "#/entities/Driver" },
+      "description": "Delivery drivers"
+    },
+    "orders": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Customer orders"
+    },
+    "fund_requests": {
+      "schema": { "$ref": "#/entities/FundRequest" },
+      "description": "Fund requests"
+    },
+    "users": {
+      "schema": { "$ref": "#/entities/SystemUser" },
+      "description": "System users"
+    },
+    "settings": {
+      "schema": { "$ref": "#/entities/AppSettings" },
+      "description": "App settings"
+    },
+    "products": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Products"
+    },
+    "financial_configs": {
+      "schema": { "$ref": "#/entities/ProductFinancialConfig" },
+      "description": "Financial configs"
+    },
+    "daily_entries": {
+      "schema": { "$ref": "#/entities/DailyFinancialEntry" },
+      "description": "Daily financial entries"
+    },
+    "daily_finance": {
+      "schema": { "$ref": "#/entities/DailyFinanceData" },
+      "description": "Daily finance data"
+    },
+    "purchase_orders": {
+      "schema": { "$ref": "#/entities/PurchaseOrder" },
+      "description": "Purchase orders"
+    },
+    "claude_analysis": {
+      "schema": { "$ref": "#/entities/ClaudeAnalysis" },
+      "description": "Claude analysis"
+    },
+    "accounting_entries": {
+      "schema": { "$ref": "#/entities/AccountingEntry" },
+      "description": "Accounting entries"
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "colweyz-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "prisma generate && tsc",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed-from-export.ts",
+    "db:align": "tsx prisma/seed-from-export.ts ../colweyz_firebase_dump_2026-05-26.json --align",
+    "db:backfill-payments": "tsx scripts/backfill-order-payment-methods.ts",
+    "sync:du-colweyz": "tsx scripts/compare-du-colweyz.ts",
+    "db:studio": "prisma studio",
+    "sync": "tsx src/sync/worker.ts",
+    "sync:financial-configs": "tsx scripts/sync-financial-configs-from-firestore.ts",
+    "sync:daily-entries": "tsx scripts/sync-daily-entries-from-firestore.ts",
+    "sync:reverse": "tsx src/sync/reverse-worker.ts",
+    "sync:all": "tsx scripts/run-sync-all.ts",
+    "sync:parity": "tsx scripts/sync-parity.ts",
+    "sync:diagnose": "tsx scripts/sync-diagnose.ts",
+    "sync:resync-doc": "tsx scripts/resync-firestore-doc.ts",
+    "sync:dashboard-gap": "tsx scripts/compare-dashboard-unassigned.ts",
+    "validate": "tsx scripts/validate-export.ts",
+    "reconcile": "tsx src/sync/reconcile.ts",
+    "check-integrations": "tsx scripts/check-integrations.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@prisma/client": "^6.9.0",
+    "@types/bcrypt": "^5.0.2",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.14.0",
+    "@types/papaparse": "^5.3.15",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.10.0",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2",
+    "papaparse": "^5.5.3",
+    "prisma": "^6.9.0",
+    "typescript": "~5.8.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed-from-export.ts"
+  }
+}

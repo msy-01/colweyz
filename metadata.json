@@ -1,0 +1,5 @@
+{
+  "name": "Colweyz",
+  "description": "Application de gestion de livraisons e-commerce pour le Sénégal. Gestion des commandes, livreurs, zones et calculs de balances journalières en CFA.",
+  "requestFramePermissions": []
+}

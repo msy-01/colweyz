@@ -1,0 +1,496 @@
+// ColWeyz — Schéma Prisma complet
+// Basé sur types.ts + backup Firestore (2026-05-18)
+// Tous les IDs sont des String car Firestore utilise des IDs texte
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════
+// CORE
+// ═══════════════════════════════════════════
+
+model Zone {
+  id   String   @id           // ex: "z1", "zone-1774037893991"
+  name String                 // ex: "Centre", "Banlieue"
+  rate Int                    // Tarif en FCFA (ex: 1500, 2000)
+  type String   @default("local") // "local" | "regional"
+
+  orders Order[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("zones")
+}
+
+model Driver {
+  id             String  @id           // ex: "d1", "aliou", "drv-xxx"
+  name           String
+  phone          String
+  username       String? @unique
+  passwordHash   String? @map("password_hash") // bcrypt du mot de passe original
+  initialBalance Int     @default(0)   @map("initial_balance") // solde initial FCFA
+  status         String  @default("disponible") // "disponible" | "occupé"
+  color          String?               // code couleur hex ex: "#808080"
+  uid            String?               // Firebase UID (legacy, kept for sync)
+
+  orders       Order[]
+  fundRequests FundRequest[]
+  stockEntries StockLivreur[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("drivers")
+}
+
+model SystemUser {
+  id           String   @id           // ex: "admin", "staff-xxx"
+  username     String   @unique
+  passwordHash String   @map("password_hash") // bcrypt
+  role         String   @default("staff") // "super_admin" | "staff" | "responsable"
+  permissions  String[] @default([])  // ["/", "/orders", "/drivers", ...]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("users")
+}
+
+model Order {
+  id             String  @id           // ex: "#CW80073"
+  date           String                // ISO string ou "DD/MM/YYYY"
+  clientName     String  @map("client_name")
+  clientPhone    String? @map("client_phone")
+  address        String
+  productDetails String? @map("product_details") // ex: "1 x Sony WH-1000XM4"
+  productId      String? @map("product_id")       // ID du produit Shopify matché
+  amount         Int                    // Montant FCFA
+  deliveryCost   Int?    @map("delivery_cost")
+  status         String  @default("validé")
+  remuneration   Int?                   // Rémunération livreur
+  paymentMethod  String? @map("payment_method")
+  cancelReason   String? @map("cancel_reason")
+
+  // Région / Delta
+  shippingFee            Int?    @map("shipping_fee")
+  isPrePaid              Boolean? @map("is_pre_paid")
+  regionalPaymentStatus  String?  @map("regional_payment_status") // "unpaid" | "requested" | "paid"
+
+  // Timestamps
+  assignedAt   String? @map("assigned_at")
+  deliveredAt  String? @map("delivered_at")
+  postponedAt  String? @map("postponed_at")
+  scheduledAt  String? @map("scheduled_at")
+  importedAt   String? @map("imported_at")
+
+  refusedBy    String? @map("refused_by")
+  purchaseCost Int?    @map("purchase_cost") // Coût achat snapshot au moment de la validation
+  remarks      String?
+  shippingRemarks    String? @map("shipping_remarks")
+  assignmentRemarks  String? @map("assignment_remarks")
+
+  // Flags livraison dépôt
+  isDepotDelivery          Boolean? @map("is_depot_delivery")
+  sortieDepotLogged        Boolean? @map("sortie_depot_logged")
+  livraisonDepotConfirmee  Boolean? @map("livraison_depot_confirmee")
+
+  // Linked orders (expédition groupée)
+  linkedOrderIds String[] @map("linked_order_ids") @default([])
+
+  // Relations
+  zoneId   String? @map("zone_id")
+  zone     Zone?   @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  driverId String? @map("driver_id")
+  driver   Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  // Données structurées stockées en JSONB pour performance
+  // products: [{name, quantity, sku, prixUnitaire, ponctuel}]
+  products Json?   @default("[]")  @db.JsonB
+  // logs: [{id, text, author, createdAt}]
+  logs     Json?   @default("[]")  @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@index([status])
+  @@index([date])
+  @@index([driverId])
+  @@index([zoneId])
+  @@map("orders")
+}
+
+model FundRequest {
+  id            String  @id           // ex: "fr-xxx"
+  amount        Int                    // Montant
+  type          String? @default("collect") // "collect" | "payout"
+  status        String  @default("pending") // "pending" | "paid_by_driver" | "confirmed" | "declined"
+  paymentMethod String? @map("payment_method")
+  
+  driverId    String  @map("driver_id")
+  driver      Driver  @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  createdAt   String  @map("firestore_created_at") // préservé comme string car format variable
+  confirmedAt String? @map("confirmed_at")
+
+  dbCreatedAt DateTime @default(now()) @map("created_at")
+  dbUpdatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("fund_requests")
+}
+
+// ═══════════════════════════════════════════
+// PRODUITS
+// ═══════════════════════════════════════════
+
+model Product {
+  id          String  @id           // Shopify ID ou UUID ponctuel
+  title       String
+  description String?
+  vendor      String?
+  productType String? @map("product_type")
+  status      String  @default("active") // "active" | "archived" | "draft"
+  source      String? @default("shopify") // "shopify" | "ponctuel"
+  
+  // Prix
+  sellingPrice  Int? @map("selling_price")  // Prix de vente FCFA
+  purchasePrice Int? @map("purchase_price") // Prix d'achat FCFA
+  
+  // Stock global
+  mainStock    Int?  @map("main_stock") @default(0) // backward compat
+  totalInventory Int? @map("total_inventory")
+  
+  // Stock global structuré (JSONB)
+  // {si, entrees, sorties, sf, ajustementManuel, motifDernierAjustement, ...}
+  stockGlobal Json? @map("stock_global") @db.JsonB
+  // {[livreurId]: {si, entrees, sorties, sf, ...}}  — legacy, on utilise StockLivreur table séparée
+  stockLivreurs Json? @map("stock_livreurs") @db.JsonB
+
+  tags   String[] @default([])
+
+  // Relations
+  variants ProductVariant[]
+  images   ProductImage[]
+  stockEntries   StockLivreur[]
+  stockOperations StockOperation[]
+  financialConfigs FinancialConfig[]
+
+  // Firestore timestamps préservés
+  firestoreCreatedAt String? @map("firestore_created_at")
+  firestoreUpdatedAt String? @map("firestore_updated_at")
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("products")
+}
+
+model ProductVariant {
+  id                String @id
+  title             String
+  sku               String?
+  price             Float  @default(0)
+  inventoryQuantity Int    @default(0) @map("inventory_quantity")
+  weight            Float?
+  weightUnit        String? @map("weight_unit")
+
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_variants")
+}
+
+model ProductImage {
+  id  String  @id
+  src String
+  alt String?
+
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_images")
+}
+
+// ═══════════════════════════════════════════
+// STOCK
+// ═══════════════════════════════════════════
+
+model StockLivreur {
+  id          String @id @default(uuid()) // composite "{livreurId}_{produitId}" from Firestore
+  livreurId   String @map("livreur_id")
+  produitId   String @map("produit_id")
+  produitNom  String @map("produit_nom")
+  si          Int    @default(0) @map("SI")   // Stock Initial
+  entrees     Int    @default(0)
+  sorties     Int    @default(0)
+  sf          Int    @default(0) @map("SF")   // Stock Final
+  ajustementManuel Int? @default(0) @map("ajustement_manuel")
+
+  motifDernierAjustement  String?   @map("motif_dernier_ajustement")
+  dateDernierAjustement   String?   @map("date_dernier_ajustement")
+  ajustePar               String?   @map("ajuste_par")
+
+  driver  Driver  @relation(fields: [livreurId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [produitId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@unique([livreurId, produitId])
+  @@map("stock_livreurs")
+}
+
+model StockOperation {
+  id          String @id           // ex: "op-1234567890-abc123"
+  date        String               // ISO string
+  quantity    Int    @default(0)
+  type        String               // "entree" | "sortie" | "vente" | "retour" | "si_ajustement" | "transfert_*"
+  source      String?              // "order" | "ajustement_manuel_service" | etc.
+  
+  productId   String  @map("product_id")
+  productName String  @map("product_name")
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  livreurId   String? @map("livreur_id")
+  entiteType  String? @map("entite_type")  // "depot" | "livreur" | "global"
+  entiteId    String? @map("entite_id")
+  commandeId  String? @map("commande_id")
+  referenceId String? @map("reference_id")
+  notes       String?
+
+  // Annulation
+  annule      Boolean? @default(false)
+  annuleLe    String?  @map("annule_le")
+  annuleMotif String?  @map("annule_motif")
+
+  firestoreCreatedAt String? @map("firestore_created_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@index([productId])
+  @@index([date])
+  @@index([livreurId])
+  @@map("stock_operations")
+}
+
+// ═══════════════════════════════════════════
+// FINANCE
+// ═══════════════════════════════════════════
+
+model FinancialConfig {
+  id              String @id @default(uuid())
+  productId       String @map("product_id")
+  product         Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  cau             Int    @default(0) // Prix de vente unitaire FCFA
+  appro           Int    @default(0) // Coût d'achat unitaire FCFA
+  dailyBudgetUsd  Float  @default(0) @map("daily_budget_usd") // Budget pub quotidien USD
+  isCampaignActive Boolean? @default(false) @map("is_campaign_active")
+  dateEffet       String? @map("date_effet") // YYYY-MM-DD — clé dans campagnes/{pid}/configs/{date}
+
+  firestoreUpdatedAt String? @map("firestore_updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@unique([productId, dateEffet])
+  @@map("financial_configs")
+}
+
+model DailyEntry {
+  id           String @id @default(uuid())
+  date         String @unique // YYYY-MM-DD
+  exchangeRate Float  @map("exchange_rate") // Taux USD → CFA
+  
+  // entries: {[productId]: {soldQty, spendUsd}}
+  entries      Json   @db.JsonB
+  productOrder String[] @default([]) @map("product_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("daily_entries")
+}
+
+model DailyFinance {
+  id   String @id @default(uuid())
+  date String @unique // YYYY-MM-DD
+  
+  // [{id, label, amount}]
+  otherRevenues Json @default("[]") @map("other_revenues") @db.JsonB
+  otherExpenses Json @default("[]") @map("other_expenses") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("daily_finance")
+}
+
+// ═══════════════════════════════════════════
+// ACHATS (PURCHASE ORDERS)
+// ═══════════════════════════════════════════
+
+model PurchaseOrder {
+  id              String @id         // ex: "po-xxx"
+  number          String             // ex: "PO-20231027-001"
+  date            String             // ISO / date string
+  totalAmount     Int    @map("total_amount")
+  transportFees   Int?   @map("transport_fees")
+  status          String @default("draft") // "draft" | "validated" | "paid" | "delivered"
+  source          String?
+  supplierName    String? @map("supplier_name")
+
+  // Timestamps (préservés comme string du Firestore)
+  firestoreCreatedAt String? @map("firestore_created_at")
+  validatedAt        String? @map("validated_at")
+  paidAt             String? @map("paid_at")
+  deliveredAt        String? @map("delivered_at")
+
+  linkedOrderIds     String[] @default([]) @map("linked_order_ids")
+  ponctuelStockUpdated Boolean? @default(false) @map("ponctuel_stock_updated")
+
+  // Fournisseur (JSONB)
+  fournisseur Json? @db.JsonB
+
+  // Relations
+  items     PurchaseOrderItem[]
+  documents PurchaseOrderDocument[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id          String @id @default(uuid())
+  productId   String @map("product_id")
+  productName String @map("product_name")
+  quantity    Int
+  unitPrice   Int    @map("unit_price")
+  total       Int
+  source      String @default("stock") // "stock" | "ponctuel" | "adhoc"
+
+  purchaseOrderId String        @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@map("purchase_order_items")
+}
+
+model PurchaseOrderDocument {
+  id    String @id @default(uuid())
+  name  String
+  type  String
+  data  String // Base64
+  label String
+  date  String
+
+  purchaseOrderId String        @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@map("purchase_order_documents")
+}
+
+// ═══════════════════════════════════════════
+// COMPTABILITÉ
+// ═══════════════════════════════════════════
+
+model AccountingEntry {
+  id           String  @id
+  date         String                 // YYYY-MM-DD
+  pieceNumber  String  @map("piece_number")
+  label        String
+  isManual     Boolean @map("is_manual")
+  origine      String? @default("manuel") // "finance" | "approvisionnement" | "manuel"
+  modifiable   Boolean? @default(true)
+  attachmentUrl String? @map("attachment_url")
+
+  lines AccountingEntryLine[]
+
+  firestoreCreatedAt String? @map("firestore_created_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("accounting_entries")
+}
+
+model AccountingEntryLine {
+  id        String @id @default(uuid())
+  accountId String @map("account_id")
+  label     String
+  debit     Float  @default(0)
+  credit    Float  @default(0)
+
+  accountingEntryId String          @map("accounting_entry_id")
+  accountingEntry   AccountingEntry @relation(fields: [accountingEntryId], references: [id], onDelete: Cascade)
+
+  @@map("accounting_entry_lines")
+}
+
+// ═══════════════════════════════════════════
+// CONFIG & DIVERS
+// ═══════════════════════════════════════════
+
+model AppSettings {
+  id                 String   @id @default("global")
+  adminPhone         String   @map("admin_phone") @default("")
+  logoUrl            String?  @map("logo_url")
+  shopifyDomain      String?  @map("shopify_domain")
+  shopifyAccessToken String?  @map("shopify_access_token")
+  ignoredShopifyIds  String[] @default([]) @map("ignored_shopify_ids")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("app_settings")
+}
+
+model AppConfig {
+  key   String @id           // ex: "googleSheetUrl", "lastFacebookExportDate_USD_v2"
+  value String               // Stored as string (JSON-encoded if complex)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("app_config")
+}
+
+model ClaudeAnalysis {
+  date      String  @id      // YYYY-MM-DD
+  analysis  String           // Markdown text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("claude_analysis")
+}
+
+// ═══════════════════════════════════════════
+// SYNC — Tables de contrôle
+// ═══════════════════════════════════════════
+
+model SyncState {
+  collectionName String   @id @map("collection_name")
+  lastSyncedAt   DateTime @map("last_synced_at")
+  documentsCount Int      @default(0) @map("documents_count")
+
+  @@map("sync_state")
+}
+
+model SyncLog {
+  id               String   @id @default(uuid())
+  collectionName   String   @map("collection_name")
+  documentId       String   @map("document_id")
+  operation        String   // "insert" | "update" | "delete"
+  sourceUpdatedAt  String?  @map("source_updated_at")
+  processedAt      DateTime @default(now()) @map("processed_at")
+
+  @@unique([collectionName, documentId, sourceUpdatedAt, operation])
+  @@index([collectionName])
+  @@map("sync_log")
+}

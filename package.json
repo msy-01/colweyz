@@ -1,0 +1,40 @@
+{
+  "name": "og-express",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:legacy": "tsx server.ts",
+    "start": "vite preview",
+    "build": "vite build",
+    "lint": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "cors": "^2.8.6",
+    "date-fns": "^4.1.0",
+    "express": "^5.2.1",
+    "jspdf": "2.5.1",
+    "jspdf-autotable": "^5.0.7",
+    "lucide-react": "^0.564.0",
+    "node-fetch": "^3.3.2",
+    "papaparse": "^5.5.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.13.0",
+    "recharts": "^3.7.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.14.0",
+    "@types/node-fetch": "^2.6.13",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

@@ -1,0 +1,2 @@
+# Proxy API → VPS (évite Mixed Content : Netlify HTTPS → API HTTP)
+/api/*  https://colweyz.ddns.net/api/:splat  200

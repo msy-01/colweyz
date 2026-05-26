@@ -1,0 +1,955 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { DataService } from '../services/dataService';
+import { Product, ProductFinancialConfig, DailyFinancialEntry, Order, Zone } from '../types';
+import { Save, Calendar, DollarSign, TrendingUp, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Calculator, Plus, Edit2, PauseCircle, X, Trash2, ArrowUpDown } from 'lucide-react';
+import { usePersistedDateRange } from '../hooks/usePersistedDateRange';
+import { usePersistedState } from '../hooks/usePersistedState';
+import { DateRangePicker } from '../components/DateRangePicker';
+import { parseISO, format, eachDayOfInterval, isSameDay, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
+
+export const Profitability: React.FC = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [configs, setConfigs] = useState<ProductFinancialConfig[]>([]);
+  const [dailyEntries, setDailyEntries] = useState<DailyFinancialEntry[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Date Range State
+  const [dateRange, setDateRange] = usePersistedDateRange('profitability_date_range', {
+      startDate: new Date(),
+      endDate: new Date()
+  });
+
+  // Safety check for dateRange
+  const safeDateRange = useMemo(() => {
+      if (!dateRange.startDate || !dateRange.endDate || isNaN(dateRange.startDate.getTime()) || isNaN(dateRange.endDate.getTime())) {
+          return { startDate: new Date(), endDate: new Date() };
+      }
+      return dateRange;
+  }, [dateRange]);
+
+  const isSingleDay = isSameDay(safeDateRange.startDate, safeDateRange.endDate);
+  const selectedDateStr = format(safeDateRange.startDate, 'yyyy-MM-dd'); // Used for single day editing
+
+  // Daily State (Only relevant for single day editing)
+  const [exchangeRate, setExchangeRate] = useState<number>(600); 
+  const [dailyData, setDailyData] = useState<Record<string, { soldQty: number; spendUsd: number }>>({});
+
+  // Sorting State
+  const [sortBy, setSortBy] = usePersistedState<string>('profitability_sort_by', 'CA');
+  const [sortAsc, setSortAsc] = usePersistedState<boolean>('profitability_sort_asc', false);
+
+  // Campaign Modal State
+  const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+  const [editingCampaign, setEditingCampaign] = useState<{
+      productId: string;
+      cau: number;
+      appro: number;
+      dailyBudgetUsd: number;
+  } | null>(null);
+
+  // Confirmation State
+  const [confirmAction, setConfirmAction] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadData();
+
+    const interval = setInterval(() => {
+        DataService.getOrders().then(setOrders);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    // Only load editable state if single day
+    if (isSingleDay) {
+        const entry = dailyEntries.find(e => e.date === selectedDateStr);
+        if (entry) {
+            setExchangeRate(entry.exchangeRate);
+            setDailyData(entry.entries);
+        } else {
+            setDailyData({});
+            setExchangeRate(600); // Default to 600, do not carry over previous rates
+        }
+    }
+  }, [selectedDateStr, dailyEntries, isSingleDay]);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    
+    // Create a timeout promise
+    const timeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Timeout: Le chargement prend trop de temps")), 10000)
+    );
+
+    try {
+        const [p, c, d, o, z] = await Promise.race([
+            Promise.all([
+                DataService.getProducts(),
+                DataService.getFinancialConfigs(),
+                DataService.getDailyEntries(),
+                DataService.getOrders(),
+                DataService.getZones()
+            ]),
+            timeout
+        ]) as [Product[], ProductFinancialConfig[], DailyFinancialEntry[], Order[], Zone[]];
+        
+        const activeProducts = p.filter(prod => prod.status === 'active');
+        setProducts(activeProducts);
+        setConfigs(c);
+        setDailyEntries(d);
+        setOrders(o);
+        setZones(z);
+    } catch (err: any) {
+        console.error("Error loading data:", err);
+        setError(err.message || "Erreur lors du chargement des données. Veuillez réessayer.");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const getLatestConfig = useCallback((productId: string, allConfigs: ProductFinancialConfig[]) => {
+      const productConfigs = allConfigs.filter(c => c.productId === productId);
+      productConfigs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      return productConfigs[0];
+  }, []);
+
+  const getConfigForDate = useCallback((productId: string, date: string) => {
+      const endOfDayStr = `${date}T23:59:59`;
+      const productConfigs = configs.filter(c => c.productId === productId && c.updatedAt <= endOfDayStr);
+      productConfigs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      return productConfigs[0];
+  }, [configs]);
+
+  // --- HANDLERS ---
+
+  const handleLaunchCampaign = () => {
+      setEditingCampaign({
+          productId: '',
+          cau: 0,
+          appro: 0,
+          dailyBudgetUsd: 0
+      });
+      setIsCampaignModalOpen(true);
+  };
+
+  const handleEditCampaign = (productId: string) => {
+      const config = getLatestConfig(productId, configs);
+      setEditingCampaign({
+          productId,
+          cau: config?.cau || 0,
+          appro: config?.appro || 0,
+          dailyBudgetUsd: config?.dailyBudgetUsd || 0
+      });
+      setIsCampaignModalOpen(true);
+  };
+
+  const handleSaveCampaign = async () => {
+      if (!editingCampaign || !editingCampaign.productId) return;
+
+      const now = new Date().toISOString();
+      const newConfig: ProductFinancialConfig = {
+          productId: editingCampaign.productId,
+          cau: editingCampaign.cau,
+          appro: editingCampaign.appro,
+          dailyBudgetUsd: editingCampaign.dailyBudgetUsd,
+          isCampaignActive: true,
+          updatedAt: now
+      };
+
+      await DataService.saveFinancialConfig(newConfig);
+      await loadData();
+      setIsCampaignModalOpen(false);
+      setEditingCampaign(null);
+  };
+
+  const handleToggleCampaign = async (productId: string) => {
+      if (confirmAction !== `pause-${productId}`) {
+          setConfirmAction(`pause-${productId}`);
+          setTimeout(() => setConfirmAction(null), 3000);
+          return;
+      }
+
+      // Use current date for toggle context
+      const config = getConfigForDate(productId, format(new Date(), 'yyyy-MM-dd'));
+      if (!config) return;
+
+      const newConfig: ProductFinancialConfig = {
+          ...config,
+          isCampaignActive: !config.isCampaignActive,
+          updatedAt: new Date().toISOString()
+      };
+
+      await DataService.saveFinancialConfig(newConfig);
+      setConfirmAction(null);
+      await loadData();
+  };
+
+  const handleDeleteCampaign = async (productId: string) => {
+      if (confirmAction !== `delete-${productId}`) {
+          setConfirmAction(`delete-${productId}`);
+          setTimeout(() => setConfirmAction(null), 3000);
+          return;
+      }
+
+      const config = getConfigForDate(productId, format(new Date(), 'yyyy-MM-dd'));
+      if (!config) return;
+
+      const newConfig: ProductFinancialConfig = {
+          ...config,
+          isCampaignActive: false,
+          updatedAt: new Date().toISOString()
+      };
+
+      await DataService.saveFinancialConfig(newConfig);
+      setConfirmAction(null);
+      await loadData();
+  };
+
+  const handleDailyChange = (productId: string, field: 'soldQty' | 'spendUsd', value: number) => {
+      if (!isSingleDay) return;
+      setDailyData(prev => ({
+          ...prev,
+          [productId]: {
+              soldQty: field === 'soldQty' ? value : (prev[productId]?.soldQty || 0),
+              spendUsd: field === 'spendUsd' ? value : (prev[productId]?.spendUsd || 0)
+          }
+      }));
+  };
+
+  const saveDailyEntry = async () => {
+      if (!isSingleDay) return;
+      const entry: DailyFinancialEntry = {
+          date: selectedDateStr,
+          exchangeRate,
+          entries: dailyData
+      };
+      await DataService.saveDailyEntry(entry);
+      const newEntries = [...dailyEntries];
+      const idx = newEntries.findIndex(e => e.date === selectedDateStr);
+      if (idx >= 0) newEntries[idx] = entry;
+      else newEntries.push(entry);
+      setDailyEntries(newEntries);
+      alert("Données du jour sauvegardées !");
+  };
+
+  const handleSort = (column: string) => {
+      if (sortBy === column) {
+          setSortAsc(!sortAsc);
+      } else {
+          setSortBy(column);
+          setSortAsc(false);
+      }
+  };
+
+  // --- SORTING ---
+  
+  // Calculate sorted IDs based on saved data only (stable sort)
+  const sortedProductIds = useMemo(() => {
+      const calculateSortStats = (product: Product) => {
+          let aggCA = 0;
+          let aggAPPRO = 0;
+          let aggPUB_CFA = 0;
+          let aggSoldQty = 0;
+          let aggSpendUsd = 0;
+
+          const days = eachDayOfInterval({ start: dateRange.startDate, end: dateRange.endDate });
+
+          days.forEach(day => {
+              const dateStr = format(day, 'yyyy-MM-dd');
+              const config = getConfigForDate(product.id, dateStr);
+              
+              // Use ONLY saved entries for sorting stability
+              const entry = dailyEntries.find(e => e.date === dateStr);
+              let soldQty = 0;
+              let spendUsd = 0;
+              let rate = 600;
+
+              if (entry && entry.entries[product.id]) {
+                  soldQty = entry.entries[product.id].soldQty || 0;
+                  spendUsd = entry.entries[product.id].spendUsd || 0;
+                  rate = entry.exchangeRate;
+              }
+
+              const CAU = config?.cau || 0;
+              const APPRO_U = config?.appro || 0;
+              
+              aggCA += soldQty * CAU;
+              aggAPPRO += soldQty * APPRO_U;
+              aggPUB_CFA += spendUsd * 1.18 * rate;
+              aggSoldQty += soldQty;
+              aggSpendUsd += spendUsd;
+          });
+
+          const MARGE = aggCA - aggAPPRO - aggPUB_CFA;
+          const TAUX_MARGE = (aggAPPRO + aggPUB_CFA) > 0 ? (MARGE / (aggAPPRO + aggPUB_CFA)) * 100 : 0;
+          const MER = aggPUB_CFA > 0 ? aggCA / aggPUB_CFA : 0;
+          const ROI = aggPUB_CFA > 0 ? MARGE / aggPUB_CFA : 0;
+          const CPAu = aggSoldQty > 0 ? aggPUB_CFA / aggSoldQty : 0;
+
+          return { aggCA, aggAPPRO, aggPUB_CFA, aggSoldQty, aggSpendUsd, MARGE, TAUX_MARGE, MER, ROI, CPAu };
+      };
+
+      const sorted = [...activeCampaignProducts].sort((a, b) => {
+          if (sortBy === 'product') {
+              return sortAsc 
+                  ? a.title.localeCompare(b.title)
+                  : b.title.localeCompare(a.title);
+          }
+
+          const statsA = calculateSortStats(a);
+          const statsB = calculateSortStats(b);
+
+          let valA: number = 0;
+          let valB: number = 0;
+
+          switch (sortBy) {
+              case 'soldQty':
+                  valA = statsA.aggSoldQty;
+                  valB = statsB.aggSoldQty;
+                  break;
+              case 'spendUsd':
+                  valA = statsA.aggSpendUsd;
+                  valB = statsB.aggSpendUsd;
+                  break;
+              case 'ca':
+                  valA = statsA.aggCA;
+                  valB = statsB.aggCA;
+                  break;
+              case 'appro':
+                  valA = statsA.aggAPPRO;
+                  valB = statsB.aggAPPRO;
+                  break;
+              case 'pubCfa':
+                  valA = statsA.aggPUB_CFA;
+                  valB = statsB.aggPUB_CFA;
+                  break;
+              case 'marge':
+                  valA = statsA.MARGE;
+                  valB = statsB.MARGE;
+                  break;
+              case 'tauxMarge':
+                  valA = statsA.TAUX_MARGE;
+                  valB = statsB.TAUX_MARGE;
+                  break;
+              case 'mer':
+                  valA = statsA.MER;
+                  valB = statsB.MER;
+                  break;
+              case 'roi':
+                  valA = statsA.ROI;
+                  valB = statsB.ROI;
+                  break;
+              case 'cpau':
+                  valA = statsA.CPAu;
+                  valB = statsB.CPAu;
+                  break;
+              default:
+                  return 0;
+          }
+
+          return sortAsc ? valA - valB : valB - valA;
+      });
+      
+      return sorted.map(p => p.id);
+  }, [activeCampaignProducts, sortBy, sortAsc, dailyEntries, dateRange, getConfigForDate]); // dailyData excluded for stability
+
+  // Filter active products (active at the END of the period)
+  const activeCampaignProducts = useMemo(() => {
+      if (!dateRange.endDate || isNaN(dateRange.endDate.getTime())) return [];
+      return products.filter(p => {
+          try {
+              const config = getConfigForDate(p.id, format(dateRange.endDate, 'yyyy-MM-dd'));
+              return config?.isCampaignActive === true;
+          } catch (e) {
+              console.error("Error checking active campaign", e);
+              return false;
+          }
+      });
+  }, [products, configs, dateRange, getConfigForDate]);
+
+  const displayProducts = useMemo(() => {
+      // If we have sorted IDs, use them
+      if (sortedProductIds.length > 0) {
+          const productMap = new Map(activeCampaignProducts.map(p => [p.id, p]));
+          const list = sortedProductIds
+              .map(id => productMap.get(id))
+              .filter((p): p is Product => !!p)
+              .map(p => ({
+                  product: p,
+                  row: calculateRow(p)
+              }));
+          
+          // If the list length matches (no new products added/removed), return it
+          if (list.length === activeCampaignProducts.length) {
+              return list;
+          }
+      }
+
+      // Fallback: unsorted (or default sorted) if IDs are missing/stale
+      return activeCampaignProducts.map(p => ({
+          product: p,
+          row: calculateRow(p)
+      }));
+  }, [sortedProductIds, activeCampaignProducts, dailyData, exchangeRate, dateRange, orders, configs]);
+
+  const otherProductsStats = useMemo(() => {
+      let ca = 0;
+      let appro = 0;
+      let marge = 0;
+
+      const otherOrders = orders.filter(o => {
+          const targetDate = o.scheduledAt || o.assignedAt;
+          if (!targetDate) return false;
+          
+          // Check interval
+          const dateObj = parseISO(targetDate);
+          if (!isWithinInterval(dateObj, { start: startOfDay(dateRange.startDate), end: endOfDay(dateRange.endDate) })) return false;
+
+          const isCampaign = activeCampaignProducts.some(p => isOrderForProduct(o, p));
+          return !isCampaign;
+      });
+
+      const realSales = calculateRealSales(otherOrders);
+      const toDeliver = calculateToDeliver(otherOrders);
+      
+      otherOrders.forEach(o => {
+          const regionalStatuses = [
+              'regional_en_attente', 'regional_contacte', 'regional_injoignable', 
+              'expedition_en_cours', 'expedition_livree', 'regional_annule', 'regional_reporte'
+          ];
+          let isRegional = regionalStatuses.includes(o.status);
+          if (!isRegional && o.status === 'validé' && o.zoneId) {
+              const zone = zones.find(z => z.id === o.zoneId);
+              if (zone && zone.type === 'regional') isRegional = true;
+          }
+
+          const isPaid = isRegional ? o.regionalPaymentStatus === 'paid' : o.status === 'livré';
+          
+          if (isPaid) {
+              let product = products.find(p => p.id === o.productId);
+              if (!product && o.productDetails) {
+                  product = products.find(p => o.productDetails.toLowerCase().includes(p.title.toLowerCase()));
+              }
+
+              if (product) {
+                  // Use config at the time of order? Or current? 
+                  // Ideally config at the time of order date.
+                  const orderDate = o.scheduledAt || o.assignedAt || format(new Date(), 'yyyy-MM-dd');
+                  const config = getConfigForDate(product.id, orderDate);
+                  const qty = getQuantityInOrder(o, product);
+                  if (config && qty > 0) {
+                      const itemCA = qty * config.cau;
+                      const itemAppro = qty * config.appro;
+                      ca += itemCA;
+                      appro += itemAppro;
+                      marge += (itemCA - itemAppro);
+                  }
+              }
+          }
+      });
+
+      const pointMort = toDeliver;
+      const remaining = Math.max(0, pointMort - realSales);
+
+      return { realSales, toDeliver, pointMort, remaining, ca, appro, marge };
+  }, [orders, activeCampaignProducts, dateRange, zones, products, configs]);
+
+  const totals = useMemo(() => {
+      let tCA = 0, tAPPRO = 0, tPUB = 0, tMARGE = 0, tSold = 0;
+      let tPointMort = 0, tRealSales = 0, tRemaining = 0, tToDeliver = 0;
+      let tSpendUsd = 0;
+
+      displayProducts.forEach(({ row }) => {
+          tCA += row.CA;
+          tAPPRO += row.APPRO;
+          tPUB += row.PUB_CFA;
+          tMARGE += row.MARGE;
+          tSold += row.soldQty;
+          tSpendUsd += row.spendUsd;
+          
+          tPointMort += row.pointMort;
+          tRealSales += row.realSales;
+          tRemaining += row.remainingToPointMort;
+          tToDeliver += row.toDeliver;
+      });
+      
+      tPointMort += otherProductsStats.pointMort;
+      tRealSales += otherProductsStats.realSales;
+      tRemaining += otherProductsStats.remaining;
+      tToDeliver += otherProductsStats.toDeliver;
+
+      const tMER = tPUB > 0 ? tCA / tPUB : 0;
+      const tROI = tPUB > 0 ? tMARGE / tPUB : 0;
+      const tCPAu = tSold > 0 ? tPUB / tSold : 0;
+      const tTAUX_MARGE = (tAPPRO + tPUB) > 0 ? (tMARGE / (tAPPRO + tPUB)) * 100 : 0;
+
+      return { tCA, tAPPRO, tPUB, tMARGE, tMER, tROI, tCPAu, tTAUX_MARGE, tPointMort, tRealSales, tRemaining, tToDeliver, tSold, tSpendUsd };
+  }, [displayProducts, otherProductsStats]);
+
+  // Monthly stats (independent of selection, always current month)
+  const monthlyStats = useMemo(() => {
+      const currentMonth = format(new Date(), 'yyyy-MM');
+      const monthEntries = dailyEntries.filter(e => e.date.startsWith(currentMonth));
+      
+      let mCA = 0, mMARGE = 0, mPUB = 0;
+      
+      monthEntries.forEach(dayEntry => {
+          const dayRate = dayEntry.exchangeRate;
+          Object.entries(dayEntry.entries).forEach(([prodId, data]) => {
+              const config = getConfigForDate(prodId, dayEntry.date);
+              if (!config || !config.isCampaignActive) return;
+              
+              const CA = data.soldQty * config.cau;
+              const APPRO = data.soldQty * config.appro;
+              const PUB = data.spendUsd * 1.18 * dayRate;
+              const MARGE = CA - APPRO - PUB;
+              
+              mCA += CA;
+              mMARGE += MARGE;
+              mPUB += PUB;
+          });
+      });
+
+      const mMER = mPUB > 0 ? mCA / mPUB : 0;
+      const mROI = mPUB > 0 ? mMARGE / mPUB : 0;
+
+      return { mCA, mMARGE, mMER, mROI };
+  }, [dailyEntries, configs]);
+
+  const formatMoney = (val: number) => Math.round(val).toLocaleString('fr-FR');
+  const formatPercent = (val: number) => val.toFixed(1) + '%';
+  const formatFloat = (val: number) => val.toFixed(2);
+
+  const SortIcon = ({ column }: { column: string }) => {
+      if (sortBy !== column) return <ArrowUpDown size={12} className="ml-1 text-gray-300 opacity-0 group-hover:opacity-100" />;
+      return <ArrowUpDown size={12} className={`ml-1 ${sortAsc ? 'text-blue-600 rotate-180' : 'text-blue-600'}`} />;
+  };
+
+  const ThSortable = ({ column, label, className = '' }: { column: string, label: string, className?: string }) => (
+      <th 
+          className={`px-2 py-3 cursor-pointer group hover:bg-gray-100 transition-colors ${className}`}
+          onClick={() => handleSort(column)}
+      >
+          <div className="flex items-center justify-end">
+              {label}
+              <SortIcon column={column} />
+          </div>
+      </th>
+  );
+
+  if (loading) return <div className="p-8 text-center">Chargement...</div>;
+  if (error) return <div className="p-8 text-center text-red-600 font-bold">{error}</div>;
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto pb-24">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+            <TrendingUp className="text-green-600" />
+            Rentabilité
+        </h1>
+        <button 
+            onClick={handleLaunchCampaign}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700 shadow-sm"
+        >
+            <Plus size={18} />
+            Lancer une campagne
+        </button>
+      </div>
+
+      <div className="space-y-6">
+          {/* CONTROLS */}
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-4 items-end justify-between">
+              <div className="flex gap-4 items-end">
+                  <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Période</label>
+                      <DateRangePicker 
+                          dateRange={dateRange}
+                          onUpdate={setDateRange}
+                      />
+                  </div>
+                  {isSingleDay && (
+                      <div>
+                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Taux USD/CFA</label>
+                          <div className="relative">
+                              <DollarSign size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input 
+                                  type="number" 
+                                  className="border rounded-lg pl-7 pr-3 py-2 font-bold text-gray-700 w-32"
+                                  value={exchangeRate}
+                                  onChange={e => setExchangeRate(Number(e.target.value))}
+                              />
+                          </div>
+                      </div>
+                  )}
+              </div>
+              
+              <div className="flex gap-4 bg-blue-50 px-4 py-2 rounded-lg border border-blue-100">
+                  <div>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase">Total CA (Mois)</p>
+                      <p className="text-lg font-black text-blue-700">{formatMoney(monthlyStats.mCA)}</p>
+                  </div>
+                  <div>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase">Marge (Mois)</p>
+                      <p className="text-lg font-black text-blue-700">{formatMoney(monthlyStats.mMARGE)}</p>
+                  </div>
+                  <div>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase">ROI (Mois)</p>
+                      <p className="text-lg font-black text-blue-700">{formatFloat(monthlyStats.mROI)}</p>
+                  </div>
+              </div>
+
+              {isSingleDay && (
+                  <button onClick={saveDailyEntry} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-green-700 shadow-sm">
+                      <Save size={18} /> Enregistrer Journée
+                  </button>
+              )}
+          </div>
+
+          {/* MAIN TABLE */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-right">
+                      <thead className="bg-gray-50 text-gray-500 uppercase font-bold text-[10px]">
+                          <tr>
+                              <th 
+                                  className="px-4 py-3 text-left w-48 cursor-pointer group hover:bg-gray-100 transition-colors"
+                                  onClick={() => handleSort('product')}
+                              >
+                                  <div className="flex items-center">
+                                      Produit
+                                      <SortIcon column="product" />
+                                  </div>
+                              </th>
+                              <ThSortable column="soldQty" label="Qtes V." className="bg-yellow-50 text-yellow-700" />
+                              <ThSortable column="spendUsd" label="Pub ($)" className="bg-yellow-50 text-yellow-700" />
+                              <ThSortable column="CA" label="CA" />
+                              <ThSortable column="APPRO" label="Appro" />
+                              <ThSortable column="PUB_CFA" label="Pub (CFA)" />
+                              <ThSortable column="MARGE" label="Marge" className="bg-green-50 text-green-700" />
+                              <ThSortable column="TAUX_MARGE" label="% Marge" />
+                              <ThSortable column="MER" label="MER" />
+                              <ThSortable column="ROI" label="ROI" />
+                              <ThSortable column="CPAu" label="CPAu" />
+                              <th className="px-2 py-3 text-center">Actions</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {displayProducts.length === 0 ? (
+                              <tr>
+                                  <td colSpan={12} className="px-6 py-8 text-center text-gray-400">
+                                      Aucune campagne active pour cette période.
+                                  </td>
+                              </tr>
+                          ) : (
+                              displayProducts.map(({ product: p, row }) => {
+                                  return (
+                                      <tr key={p.id} className="hover:bg-gray-50">
+                                          <td className="px-4 py-2 text-left font-medium text-gray-900 truncate max-w-[200px]" title={p.title}>{p.title}</td>
+                                          <td className="px-2 py-2 bg-yellow-50/50">
+                                              {isSingleDay ? (
+                                                  <input 
+                                                      type="number" 
+                                                      className="w-16 border rounded px-1 py-1 text-right font-bold"
+                                                      value={dailyData[p.id]?.soldQty || ''}
+                                                      onChange={e => handleDailyChange(p.id, 'soldQty', Number(e.target.value))}
+                                                      placeholder="0"
+                                                  />
+                                              ) : (
+                                                  <span className="font-bold text-gray-700">{row.soldQty}</span>
+                                              )}
+                                          </td>
+                                          <td className="px-2 py-2 bg-yellow-50/50">
+                                              {isSingleDay ? (
+                                                  <input 
+                                                      type="number" 
+                                                      className="w-20 border rounded px-1 py-1 text-right font-bold"
+                                                      value={dailyData[p.id]?.spendUsd || ''}
+                                                      onChange={e => handleDailyChange(p.id, 'spendUsd', Number(e.target.value))}
+                                                      placeholder="0"
+                                                  />
+                                              ) : (
+                                                  <span className="font-bold text-gray-700">{formatFloat(row.spendUsd)}</span>
+                                              )}
+                                          </td>
+                                          <td className="px-2 py-2 font-mono">{formatMoney(row.CA)}</td>
+                                          <td className="px-2 py-2 font-mono text-gray-500">{formatMoney(row.APPRO)}</td>
+                                          <td className="px-2 py-2 font-mono text-gray-500">{formatMoney(row.PUB_CFA)}</td>
+                                          <td className={`px-2 py-2 font-mono font-bold ${row.MARGE >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                              {formatMoney(row.MARGE)}
+                                          </td>
+                                          <td className="px-2 py-2 text-xs">{formatPercent(row.TAUX_MARGE)}</td>
+                                          <td className="px-2 py-2 text-xs">{formatFloat(row.MER)}</td>
+                                          <td className={`px-2 py-2 font-bold ${row.ROI >= 2 ? 'text-green-600' : row.ROI >= 1 ? 'text-orange-500' : 'text-red-500'}`}>
+                                              {formatFloat(row.ROI)}
+                                          </td>
+                                          <td className="px-2 py-2 text-xs">{formatMoney(row.CPAu)}</td>
+                                          <td className="px-2 py-2 text-center">
+                                              <div className="flex items-center justify-center gap-1">
+                                                  <button 
+                                                      onClick={() => handleEditCampaign(p.id)}
+                                                      className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                                      title="Modifier paramètres"
+                                                  >
+                                                      <Edit2 size={14} />
+                                                  </button>
+                                                  
+                                                  <button 
+                                                      onClick={() => handleToggleCampaign(p.id)}
+                                                      className={`p-1 rounded transition-colors ${
+                                                          confirmAction === `pause-${p.id}` 
+                                                              ? 'bg-orange-100 text-orange-700 font-bold px-2 text-[10px]' 
+                                                              : 'text-orange-500 hover:bg-orange-50'
+                                                      }`}
+                                                      title="Mettre en pause"
+                                                  >
+                                                      {confirmAction === `pause-${p.id}` ? 'Confirmer ?' : <PauseCircle size={14} />}
+                                                  </button>
+
+                                                  <button 
+                                                      onClick={() => handleDeleteCampaign(p.id)}
+                                                      className={`p-1 rounded transition-colors ${
+                                                          confirmAction === `delete-${p.id}` 
+                                                              ? 'bg-red-100 text-red-700 font-bold px-2 text-[10px]' 
+                                                              : 'text-red-500 hover:bg-red-50'
+                                                      }`}
+                                                      title="Supprimer la campagne"
+                                                  >
+                                                      {confirmAction === `delete-${p.id}` ? 'Confirmer ?' : <Trash2 size={14} />}
+                                                  </button>
+                                              </div>
+                                          </td>
+                                      </tr>
+                                  );
+                              })
+                          )}
+                          {/* TOTALS ROW */}
+                          {activeCampaignProducts.length > 0 && (
+                              <tr className="bg-gray-100 font-black border-t-2 border-gray-200">
+                                  <td className="px-4 py-3 text-left">TOTAL</td>
+                                  <td className="px-2 py-3 text-center">{totals.tSold}</td>
+                                  <td className="px-2 py-3 text-right">{formatFloat(totals.tSpendUsd)}</td>
+                                  <td className="px-2 py-3">{formatMoney(totals.tCA)}</td>
+                                  <td className="px-2 py-3">{formatMoney(totals.tAPPRO)}</td>
+                                  <td className="px-2 py-3">{formatMoney(totals.tPUB)}</td>
+                                  <td className={`px-2 py-3 ${totals.tMARGE >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatMoney(totals.tMARGE)}</td>
+                                  <td className="px-2 py-3">{formatPercent(totals.tTAUX_MARGE)}</td>
+                                  <td className="px-2 py-3">{formatFloat(totals.tMER)}</td>
+                                  <td className="px-2 py-3">{formatFloat(totals.tROI)}</td>
+                                  <td className="px-2 py-3">{formatMoney(totals.tCPAu)}</td>
+                                  <td className="px-2 py-3"></td>
+                              </tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+
+          {/* POINTS MORTS */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                      <AlertCircle size={20} className="text-orange-500" />
+                      Points Morts (Objectifs Cumulés)
+                  </h3>
+                  
+                  {/* GLOBAL SUMMARY CARD */}
+                  <div className="flex gap-4 bg-orange-50 px-4 py-2 rounded-lg border border-orange-100">
+                      <div className="text-center">
+                          <p className="text-[10px] font-bold text-blue-500 uppercase">À Livrer Total</p>
+                          <p className="text-xl font-black text-gray-800">{totals.tToDeliver}</p>
+                      </div>
+                      <div className="text-center border-l border-orange-200 pl-4">
+                          <p className="text-[10px] font-bold text-orange-400 uppercase">Réalisé Total</p>
+                          <p className={`text-xl font-black ${totals.tRealSales >= totals.tPointMort ? 'text-green-600' : 'text-gray-800'}`}>
+                              {totals.tRealSales}
+                          </p>
+                      </div>
+                      <div className="text-center border-l border-orange-200 pl-4">
+                          <p className="text-[10px] font-bold text-orange-400 uppercase">Objectif Total</p>
+                          <p className="text-xl font-black text-gray-800">{totals.tPointMort}</p>
+                      </div>
+                      <div className="text-center border-l border-orange-200 pl-4">
+                          <p className="text-[10px] font-bold text-orange-400 uppercase">Reste Total</p>
+                          <p className="text-xl font-black text-orange-600">{Math.max(0, totals.tPointMort - totals.tRealSales)}</p>
+                      </div>
+                  </div>
+              </div>
+
+              {/* DENSE TABLE VIEW */}
+              <div className="overflow-x-auto max-h-[500px] overflow-y-auto border rounded-lg">
+                  <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-50 text-gray-500 uppercase font-bold text-[10px] sticky top-0 z-10">
+                          <tr>
+                              <th className="px-4 py-2">Produit</th>
+                              <th className="px-2 py-2 text-right">Budget ($)</th>
+                              <th className="px-2 py-2 text-right">Coût Achat</th>
+                              <th className="px-2 py-2 text-center bg-blue-50/50 text-blue-600">À Livrer</th>
+                              <th className="px-2 py-2 text-center">Réalisé</th>
+                              <th className="px-2 py-2 text-center">Objectif</th>
+                              <th className="px-2 py-2 text-center">Reste</th>
+                              <th className="px-2 py-2 text-center">Status</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {activeCampaignProducts.map(p => {
+                              const { pointMort, allocatedPubCfa, config, realSales, remainingToPointMort, toDeliver } = calculateRow(p);
+                              if (!config || config.dailyBudgetUsd === 0) return null;
+
+                              const isAchieved = realSales >= pointMort;
+
+                              return (
+                                  <tr key={p.id} className={`hover:bg-gray-50 ${isAchieved ? 'bg-green-50/30' : ''}`}>
+                                      <td className="px-4 py-2 font-medium text-gray-900 truncate max-w-[200px]" title={p.title}>
+                                          {p.title}
+                                      </td>
+                                      <td className="px-2 py-2 text-right font-mono text-xs">
+                                          {config.dailyBudgetUsd}$ <span className="text-gray-400">({formatMoney(allocatedPubCfa)})</span>
+                                      </td>
+                                      <td className="px-2 py-2 text-right font-mono text-xs text-gray-500">
+                                          {formatMoney(config.appro)}
+                                      </td>
+                                      <td className="px-2 py-2 text-center font-bold text-blue-600 bg-blue-50/30">
+                                          {toDeliver}
+                                      </td>
+                                      <td className="px-2 py-2 text-center font-bold text-gray-800">
+                                          {realSales}
+                                      </td>
+                                      <td className="px-2 py-2 text-center font-bold text-gray-500">
+                                          {pointMort}
+                                      </td>
+                                      <td className="px-2 py-2 text-center font-black text-orange-600">
+                                          {remainingToPointMort}
+                                      </td>
+                                      <td className="px-2 py-2 text-center">
+                                          {isAchieved ? (
+                                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">
+                                                  ATTEINT
+                                              </span>
+                                          ) : (
+                                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-500">
+                                                  EN COURS
+                                              </span>
+                                          )}
+                                      </td>
+                                  </tr>
+                              );
+                          })}
+                          
+                          {/* AUTRES PRODUITS ROW */}
+                          <tr className="bg-gray-50 border-t-2 border-gray-200">
+                              <td className="px-4 py-2 font-bold text-gray-600 italic">
+                                  Autres Produits
+                              </td>
+                              <td className="px-2 py-2 text-right font-mono text-xs text-gray-400">-</td>
+                              <td className="px-2 py-2 text-right font-mono text-xs text-gray-400">-</td>
+                              <td className="px-2 py-2 text-center font-bold text-blue-600 bg-blue-50/30">
+                                  {otherProductsStats.toDeliver}
+                              </td>
+                              <td className="px-2 py-2 text-center font-bold text-gray-800">
+                                  {otherProductsStats.realSales}
+                              </td>
+                              <td className="px-2 py-2 text-center font-bold text-gray-500">
+                                  {otherProductsStats.pointMort}
+                              </td>
+                              <td className="px-2 py-2 text-center font-black text-orange-600">
+                                  {otherProductsStats.remaining}
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                  {otherProductsStats.realSales >= otherProductsStats.pointMort ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">
+                                          OK
+                                      </span>
+                                  ) : (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-500">
+                                          -
+                                      </span>
+                                  )}
+                              </td>
+                          </tr>
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+      </div>
+
+      {/* CAMPAIGN MODAL */}
+      {isCampaignModalOpen && editingCampaign && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-gray-800">
+                          {editingCampaign.productId ? 'Modifier Campagne' : 'Lancer Campagne'}
+                      </h3>
+                      <button onClick={() => setIsCampaignModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                          <X size={24} />
+                      </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Produit</label>
+                          {editingCampaign.productId ? (
+                              <div className="p-3 bg-gray-50 rounded-lg font-bold text-gray-800">
+                                  {products.find(p => p.id === editingCampaign.productId)?.title || 'Produit inconnu'}
+                              </div>
+                          ) : (
+                              <select 
+                                  className="w-full border rounded-lg px-3 py-2"
+                                  value={editingCampaign.productId}
+                                  onChange={e => setEditingCampaign({...editingCampaign, productId: e.target.value})}
+                              >
+                                  <option value="">Sélectionner un produit...</option>
+                                  {products.map(p => (
+                                      <option key={p.id} value={p.id}>{p.title}</option>
+                                  ))}
+                              </select>
+                          )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Prix Vente (CFA)</label>
+                              <input 
+                                  type="number" 
+                                  className="w-full border rounded-lg px-3 py-2"
+                                  value={editingCampaign.cau}
+                                  onChange={e => setEditingCampaign({...editingCampaign, cau: parseInt(e.target.value) || 0})}
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Coût Achat (CFA)</label>
+                              <input 
+                                  type="number" 
+                                  className="w-full border rounded-lg px-3 py-2"
+                                  value={editingCampaign.appro}
+                                  onChange={e => setEditingCampaign({...editingCampaign, appro: parseInt(e.target.value) || 0})}
+                              />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Budget Pub ($) / Jour</label>
+                          <input 
+                              type="number" 
+                              className="w-full border rounded-lg px-3 py-2"
+                              value={editingCampaign.dailyBudgetUsd}
+                              onChange={e => setEditingCampaign({...editingCampaign, dailyBudgetUsd: parseInt(e.target.value) || 0})}
+                          />
+                      </div>
+
+                      <div className="pt-4 flex justify-end gap-2">
+                          <button onClick={() => setIsCampaignModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Annuler</button>
+                          <button onClick={handleSaveCampaign} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold">Sauvegarder</button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+    </div>
+  );
+};

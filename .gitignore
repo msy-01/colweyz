@@ -1,0 +1,31 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+server/.env
+server/firebase-service-account.json
+*firebase-adminsdk*.json
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# Exports Firestore (contiennent parfois des tokens Shopify — ne jamais pousser)
+colweyz_firebase_dump*.json
+colweyz_firebase_dump_*.json
+colweyz_dump_latest.json
