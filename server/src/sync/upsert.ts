@@ -4,7 +4,7 @@ import { paymentMethodFromFirestore } from '../lib/payment-method.js';
 import { isPostgresSyncEcho } from '../lib/firestore-sync.js';
 import {
   financialConfigStableId,
-  getPurchaseOrderSourceUpdatedAt,
+  getEffectiveSourceUpdatedAt,
   getSourceUpdatedAt,
   logSyncEvent,
   resolveFinancialConfigMeta,
@@ -32,20 +32,25 @@ export async function processUpsert(
     return;
   }
 
-  // Les configs campagne peuvent porter _syncSource après un reverse passé : il faut
-  // quand même les réimporter (l'ancienne app lit collectionGroup sans filtrer).
-  if (isPostgresSyncEcho(data) && collectionName !== 'financial_configs') {
+  // Éviter boucle reverse→forward, sauf :
+  // - orders : l'ancienne app peut laisser _syncSource sur un doc modifié ensuite
+  // - --force (resync manuel) : doit toujours réimporter
+  const isEcho = isPostgresSyncEcho(data);
+  const skipEcho =
+    isEcho &&
+    !options?.force &&
+    collectionName !== 'financial_configs' &&
+    collectionName !== 'orders';
+
+  if (skipEcho) {
     return;
   }
 
-  const sourceUpdatedAtRaw =
-    collectionName === 'purchase_orders'
-      ? getPurchaseOrderSourceUpdatedAt(data)
-      : getSourceUpdatedAt(data);
-  // IMPORTANT:
-  // Certaines écritures Firestore (ancienne app) ne mettent pas toujours à jour `updatedAt`.
-  // Pour éviter de devoir relancer `resync --force`, on fallback sur le metadata Firestore.
-  const sourceUpdatedAt = sourceUpdatedAtRaw || ctx.firestoreUpdateTime || null;
+  const sourceUpdatedAt = getEffectiveSourceUpdatedAt(
+    collectionName,
+    data,
+    ctx.firestoreUpdateTime
+  );
   const fcMeta =
     collectionName === 'financial_configs'
       ? resolveFinancialConfigMeta(docId, data, ctx.docPath)
