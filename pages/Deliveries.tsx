@@ -160,7 +160,7 @@ export const Deliveries: React.FC<DeliveriesProps> = ({ currentUser }) => {
     const relevantOrders = orders.filter(
       (o) =>
         (selectedDriverId === 'all' || o.driverId === selectedDriverId) &&
-        (o.status === 'livré' || o.status === 'terminé')
+        (o.status === 'livré' || o.status === 'terminé' || o.status === 'expedition_livree')
     );
 
     const totalCash = relevantOrders

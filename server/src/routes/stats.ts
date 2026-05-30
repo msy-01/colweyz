@@ -24,7 +24,7 @@ router.get('/colweyz-debt', async (req, res) => {
     const [orders, drivers, zones] = await Promise.all([
       prisma.order.findMany({
         where: {
-          status: { in: ['livré', 'terminé'] },
+          status: { in: ['livré', 'terminé', 'expedition_livree'] },
           ...(driverId ? { driverId } : {}),
         },
         select: {

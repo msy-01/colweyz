@@ -47,6 +47,25 @@ export function parseTimestamp(value: string | null | undefined): number | null 
   return Number.isNaN(t) ? null : t;
 }
 
+/** Horodatage effectif = max(champs doc, metadata Firestore updateTime). */
+export function getEffectiveSourceUpdatedAt(
+  collectionName: string,
+  data: Record<string, unknown>,
+  firestoreUpdateTime?: string | null
+): string | null {
+  const fromDoc =
+    collectionName === 'purchase_orders'
+      ? getPurchaseOrderSourceUpdatedAt(data)
+      : getSourceUpdatedAt(data);
+
+  let best: number | null = null;
+  for (const raw of [fromDoc, firestoreUpdateTime]) {
+    const t = parseTimestamp(raw);
+    if (t !== null && (best === null || t > best)) best = t;
+  }
+  return best !== null ? new Date(best).toISOString() : null;
+}
+
 /**
  * Ignore les événements Firestore plus anciens que ce qui est déjà en base.
  */
@@ -56,6 +75,10 @@ export async function shouldSkipStaleUpdate(
   sourceUpdatedAt: string | null,
   extra?: { productId?: string; dateEffet?: string; docPath?: string }
 ): Promise<boolean> {
+  // Orders: l'ancienne app ne met pas toujours `updatedAt` à jour ; PG.updatedAt reflète
+  // le dernier import/align, pas Firestore → ne jamais ignorer un événement live.
+  if (collectionName === 'orders') return false;
+
   if (!sourceUpdatedAt) return false;
   const incoming = parseTimestamp(sourceUpdatedAt);
   if (incoming === null) return false;
