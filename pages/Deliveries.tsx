@@ -156,36 +156,18 @@ export const Deliveries: React.FC<DeliveriesProps> = ({ currentUser }) => {
         return sum + ((o.amount ?? 0) - remun);
     }, 0);
 
-    // 2. Dû à Colweyz — même logique que Balances / source_code (global, avec initialBalance)
-    const relevantOrders = orders.filter(
-      (o) =>
-        (selectedDriverId === 'all' || o.driverId === selectedDriverId) &&
-        (o.status === 'livré' || o.status === 'terminé' || o.status === 'expedition_livree')
-    );
-
-    const totalCash = relevantOrders
-      .filter(
-        (o) =>
-          o.modePaiement === 'Espèces' ||
-          (!o.modePaiement && (o.paymentMethod === 'cash' || !o.paymentMethod))
+    // 2. Dû à Colweyz — Net après commissions (Période / Date filtrée)
+    const dailyCash = deliveredOrders
+      .filter((o) =>
+        o.modePaiement === 'Espèces' ||
+        (!o.modePaiement && (o.paymentMethod === 'cash' || !o.paymentMethod))
       )
       .reduce((sum, o) => sum + (o.amount ?? 0), 0);
 
-    const totalRemun = relevantOrders.reduce((sum, o) => {
-      if (isRegionalOrder(o)) return sum;
-      return sum + (o.remuneration || 0);
-    }, 0);
-
-    const initial =
-      selectedDriverId !== 'all'
-        ? drivers.find((d) => d.id === selectedDriverId)?.initialBalance || 0
-        : drivers.reduce((sum, d) => sum + (d.initialBalance || 0), 0);
-
-    const balance = initial + totalRemun - totalCash;
-    const amountDueColweyz = balance < 0 ? Math.abs(balance) : 0;
+    const amountDueColweyz = dailyCash - totalCommissions;
 
     return { totalCA, totalCommissions, projectedRevenue, totalCourses, amountDueColweyz };
-  }, [filteredOrders, orders, drivers, selectedDriverId]);
+  }, [filteredOrders, selectedDriverId]);
 
   // Grouping Logic
   const groupedOrders = useMemo(() => {
@@ -319,9 +301,9 @@ export const Deliveries: React.FC<DeliveriesProps> = ({ currentUser }) => {
             <DollarSign size={24} />
           </div>
           <div>
-            <p className="text-xs text-red-600 font-bold uppercase tracking-wider">Dû à Colweyz (solde global)</p>
+            <p className="text-xs text-red-600 font-bold uppercase tracking-wider">Dû à Colweyz (Total)</p>
             <p className="text-xl font-bold text-red-800">{formatFCFA(stats.amountDueColweyz)}</p>
-            <p className="text-[10px] text-red-400">Toutes dates · hors filtre période</p>
+            <p className="text-[10px] text-red-400">Net après commissions</p>
           </div>
         </div>
 
