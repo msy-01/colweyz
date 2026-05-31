@@ -32,17 +32,12 @@ export async function processUpsert(
     return;
   }
 
-  // Éviter boucle reverse→forward, sauf :
-  // - orders : l'ancienne app peut laisser _syncSource sur un doc modifié ensuite
-  // - --force (resync manuel) : doit toujours réimporter
+  // Éviter boucle reverse→forward : tout doc marqué _syncSource='postgres'
+  // a été poussé par le reverse worker — ne pas le réimporter dans PG
+  // (sinon updatedAt serait bumpé, déclenchant un nouveau push reverse → boucle infinie).
+  // Exception : --force (resync manuel) doit toujours réimporter.
   const isEcho = isPostgresSyncEcho(data);
-  const skipEcho =
-    isEcho &&
-    !options?.force &&
-    collectionName !== 'financial_configs' &&
-    collectionName !== 'orders';
-
-  if (skipEcho) {
+  if (isEcho && !options?.force) {
     return;
   }
 
