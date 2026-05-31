@@ -88,6 +88,7 @@ function serializeOrder(row: any): Record<string, unknown> {
     shippingFee: row.shippingFee,
     isPrePaid: row.isPrePaid,
     regionalPaymentStatus: row.regionalPaymentStatus,
+    regionalPaidAt: row.regionalPaidAt,
     assignedAt: row.assignedAt,
     deliveredAt: row.deliveredAt,
     postponedAt: row.postponedAt,
@@ -104,6 +105,7 @@ function serializeOrder(row: any): Record<string, unknown> {
     linkedOrderIds: Array.isArray(row.linkedOrderIds) ? row.linkedOrderIds : [],
     zoneId: row.zoneId,
     driverId: row.driverId,
+    driverName: row.driverName,
     products: row.products ?? [],
     logs: row.logs ?? [],
     updatedAt: toIso(row.updatedAt),
@@ -894,12 +896,14 @@ async function loop(): Promise<void> {
           console.log(`✅ reverse ${h.name}: ${count} doc(s)`);
         }
 
+        /* Désactivé temporairement pour sécurité (Reverse Sync)
         if (h.reconcileDeletes && cycle % DELETE_RECONCILE_EVERY === 0) {
           const removed = await h.reconcileDeletes();
           if (removed > 0) {
             console.log(`🗑️ reverse ${h.name}: ${removed} suppression(s) Firestore`);
           }
         }
+        */
       }
     } catch (error) {
       console.error('❌ reverse sync error:', error);
