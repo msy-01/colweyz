@@ -29,3 +29,4 @@ dist-ssr
 colweyz_firebase_dump*.json
 colweyz_firebase_dump_*.json
 colweyz_dump_latest.json
+colweyz_pg_dump_2026-05-31.sql

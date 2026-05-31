@@ -34,16 +34,12 @@ router.post('/configs', async (req, res) => {
   try {
     const data = req.body;
     const dateEffet = data.dateEffet || new Date().toISOString().split('T')[0];
+    const id = data.id || `fc_${data.productId}_${dateEffet}_${Date.now()}`;
 
     const fsAt = firestoreSyncTimestamp();
     const config = await prisma.financialConfig.upsert({
-      where: {
-        productId_dateEffet: {
-          productId: data.productId,
-          dateEffet
-        }
-      },
-      create: { ...data, dateEffet, firestoreUpdatedAt: fsAt },
+      where: { id },
+      create: { id, ...data, dateEffet, firestoreUpdatedAt: fsAt },
       update: { ...data, dateEffet, firestoreUpdatedAt: fsAt }
     });
     res.status(201).json(config);

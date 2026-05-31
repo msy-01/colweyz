@@ -148,6 +148,7 @@ async function upsertOrder(id: string, data: Record<string, unknown>) {
     shippingFee: (data.shippingFee as number) ?? null,
     isPrePaid: (data.isPrePaid as boolean) ?? null,
     regionalPaymentStatus: (data.regionalPaymentStatus as string) || null,
+    regionalPaidAt: (data.regionalPaidAt as string) || null,
     assignedAt: (data.assignedAt as string) || null,
     deliveredAt: (data.deliveredAt as string) || null,
     postponedAt: (data.postponedAt as string) || null,
@@ -164,6 +165,7 @@ async function upsertOrder(id: string, data: Record<string, unknown>) {
     linkedOrderIds: (data.linkedOrderIds as string[]) || [],
     zoneId,
     driverId,
+    driverName: (data.driverName as string) || null,
     products: data.products ?? [],
     logs: data.logs ?? [],
   };
@@ -175,16 +177,27 @@ async function upsertOrder(id: string, data: Record<string, unknown>) {
   });
 }
 
+async function ensureProductExists(productId: string, defaultName: string) {
+  let product = await prisma.product.findUnique({ where: { id: productId } });
+  if (!product) {
+    product = await prisma.product.create({
+      data: {
+        id: productId,
+        title: defaultName || 'Produit Inconnu (Supprimé)',
+        source: 'ponctuel',
+      }
+    });
+  }
+}
+
 async function upsertStockLivreur(id: string, data: Record<string, unknown>) {
   const livreurId = data.livreurId as string;
   const produitId = data.produitId as string;
   if (!livreurId || !produitId) return;
 
-  const [driverOk, productOk] = await Promise.all([
-    prisma.driver.findUnique({ where: { id: livreurId } }),
-    prisma.product.findUnique({ where: { id: produitId } }),
-  ]);
-  if (!driverOk || !productOk) return;
+  const driverOk = await prisma.driver.findUnique({ where: { id: livreurId } });
+  if (!driverOk) return;
+  await ensureProductExists(produitId, (data.produitNom as string) || 'Inconnu');
 
   const payload = {
     livreurId,
@@ -211,8 +224,7 @@ async function upsertStockOperation(id: string, data: Record<string, unknown>) {
   const productId = data.productId as string;
   if (!productId) return;
 
-  const productExists = await prisma.product.findUnique({ where: { id: productId } });
-  if (!productExists) return;
+  await ensureProductExists(productId, (data.productName as string) || 'Inconnu');
 
   const payload = {
     date: (data.date as string) || new Date().toISOString(),
@@ -375,10 +387,8 @@ async function upsertFinancialConfig(
   if (!meta) return;
 
   const { productId, dateEffet } = meta;
-  const productExists = await prisma.product.findUnique({ where: { id: productId } });
-  if (!productExists) return;
+  await ensureProductExists(productId, `Produit ${productId} (Restauré)`);
 
-  const id = financialConfigStableId(productId, dateEffet, docPath);
   const payload = {
     cau: (data.cau as number) ?? (data.caUnitaire as number) ?? 0,
     appro: (data.appro as number) ?? (data.coutAppro as number) ?? 0,
@@ -389,8 +399,8 @@ async function upsertFinancialConfig(
   };
 
   await prisma.financialConfig.upsert({
-    where: { id },
-    create: { id, productId, ...payload },
+    where: { id: docId },
+    create: { id: docId, productId, ...payload },
     update: payload,
   });
 }
@@ -541,12 +551,14 @@ async function upsertSettings(data: Record<string, unknown>) {
       shopifyDomain: (data.shopifyDomain as string) || null,
       shopifyAccessToken: (data.shopifyAccessToken as string) || null,
       ignoredShopifyIds: (data.ignoredShopifyIds as string[]) || [],
+      stockMigratedV2: (data.stockMigratedV2 as boolean) ?? false,
     },
     update: {
       adminPhone: (data.adminPhone as string) || '',
       logoUrl: (data.logoUrl as string) || null,
       shopifyDomain: (data.shopifyDomain as string) || null,
       ignoredShopifyIds: (data.ignoredShopifyIds as string[]) || [],
+      stockMigratedV2: (data.stockMigratedV2 as boolean) ?? false,
     },
   });
 }

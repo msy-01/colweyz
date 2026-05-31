@@ -409,28 +409,40 @@ export const Balances: React.FC<BalancesProps> = ({ currentUser }) => {
       if (!driver) return 0;
 
       // Debt = Total Cash Collected - Total Remuneration - InitialBalance(payments made)
-      const myOrders = orders.filter(o => o.driverId === driverId && (o.status === 'livré' || o.status === 'terminé'));
-      
+      const myOrders = orders.filter(
+        (o) =>
+          o.driverId === driverId &&
+          (o.status === 'livré' ||
+            o.status === 'terminé' ||
+            o.status === 'expedition_livree')
+      );
+
       const totalCashCollected = myOrders
         .filter(o => o.modePaiement === 'Espèces' || (!o.modePaiement && (o.paymentMethod === 'cash' || !o.paymentMethod)))
         .reduce((sum, o) => sum + o.amount, 0);
 
-      const totalRemuneration = myOrders
-        .reduce((sum, o) => {
-            const isRegionalStatus = [
-                'regional_en_attente', 'expedition_en_cours', 'expedition_livree', 
-                'regional_contacte', 'regional_relance', 'regional_prete', 'regional_injoignable', 
-                'regional_injoignable_x2', 'regional_injoignable_x3',
-                'regional_reporte', 'regional_annule'
-            ].includes(o.status);
-            const isRegionalZone = o.zoneId && zones.find(zo => zo.id === o.zoneId)?.type === 'regional';
-            if (isRegionalStatus || (isRegionalZone && o.status === 'validé')) return sum;
-            return sum + (o.remuneration || 0);
-        }, 0);
+      const totalRemuneration = myOrders.reduce((sum, o) => {
+        const isRegionalStatus = [
+          'regional_en_attente',
+          'expedition_en_cours',
+          'expedition_livree',
+          'regional_contacte',
+          'regional_relance',
+          'regional_prete',
+          'regional_injoignable',
+          'regional_injoignable_x2',
+          'regional_injoignable_x3',
+          'regional_reporte',
+          'regional_annule',
+        ].includes(o.status);
+        const isRegionalZone =
+          o.zoneId && zones.find((zo) => zo.id === o.zoneId)?.type === 'regional';
+        if (isRegionalStatus || (isRegionalZone && o.status === 'validé'))
+          return sum;
+        return sum + (o.remuneration || 0);
+      }, 0);
 
-      const balance = totalCashCollected - totalRemuneration - driver.initialBalance;
-
-      return balance;
+      return (driver.initialBalance + totalRemuneration) - totalCashCollected;
   };
 
   // --- FUND REQUEST LOGIC ---

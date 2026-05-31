@@ -156,18 +156,32 @@ export const Deliveries: React.FC<DeliveriesProps> = ({ currentUser }) => {
         return sum + ((o.amount ?? 0) - remun);
     }, 0);
 
-    // 2. Dû à Colweyz — Net après commissions (Période / Date filtrée)
-    const dailyCash = deliveredOrders
-      .filter((o) =>
-        o.modePaiement === 'Espèces' ||
-        (!o.modePaiement && (o.paymentMethod === 'cash' || !o.paymentMethod))
-      )
-      .reduce((sum, o) => sum + (o.amount ?? 0), 0);
+    // 2. Global Debt calculation (Independent of date filter, but respects driver filter)
+    // Same logic as Balances.tsx globalStats
+    const relevantOrders = orders.filter(o => 
+        (selectedDriverId === 'all' ? (o.driverId && o.driverId !== 'depot_delta') : o.driverId === selectedDriverId) &&
+        (o.status === 'livré' || o.status === 'terminé' || o.status === 'expedition_livree')
+    );
 
-    const amountDueColweyz = dailyCash - totalCommissions;
+    const totalCash = relevantOrders
+        .filter(o => o.modePaiement === 'Espèces' || (!o.modePaiement && (o.paymentMethod === 'cash' || !o.paymentMethod)))
+        .reduce((sum, o) => sum + (o.amount ?? 0), 0);
+
+    const totalRemun = relevantOrders.reduce((sum, o) => {
+        if (isRegionalOrder(o)) return sum;
+        return sum + (o.remuneration || 0);
+    }, 0);
+
+    const initial = selectedDriverId !== 'all' 
+        ? drivers.find(d => d.id === selectedDriverId)?.initialBalance || 0 
+        : drivers.reduce((sum, d) => sum + (d.initialBalance || 0), 0);
+
+    // Solde global (toutes dates)
+    const balance = (initial + totalRemun) - totalCash;
+    const amountDueColweyz = balance < 0 ? Math.abs(balance) : 0;
 
     return { totalCA, totalCommissions, projectedRevenue, totalCourses, amountDueColweyz };
-  }, [filteredOrders, selectedDriverId]);
+  }, [filteredOrders, orders, drivers, selectedDriverId, zones]);
 
   // Grouping Logic
   const groupedOrders = useMemo(() => {

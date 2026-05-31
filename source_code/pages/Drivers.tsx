@@ -436,14 +436,35 @@ export const Drivers: React.FC<DriversProps> = ({ currentUser }) => {
   const calculateCurrentBalance = (driver: Driver) => {
       // Calculate Balance from Driver's perspective (to match DriverView)
       // Positive = Company owes Driver. Negative = Driver owes Company.
-      const myOrders = orders.filter(o => o.driverId === driver.id && (o.status === 'livré' || o.status === 'terminé'));
-      
+      const myOrders = orders.filter(
+        (o) =>
+          o.driverId === driver.id &&
+          (o.status === 'livré' ||
+            o.status === 'terminé' ||
+            o.status === 'expedition_livree')
+      );
+
       const totalCashCollected = myOrders
         .filter(o => o.modePaiement === 'Espèces' || (!o.modePaiement && (o.paymentMethod === 'cash' || !o.paymentMethod)))
         .reduce((sum, o) => sum + o.amount, 0);
 
-      const totalRemuneration = myOrders
-        .reduce((sum, o) => sum + (o.remuneration || 0), 0);
+      const totalRemuneration = myOrders.reduce((sum, o) => {
+        const isRegionalStatus = [
+          'regional_en_attente',
+          'expedition_en_cours',
+          'expedition_livree',
+          'regional_contacte',
+          'regional_relance',
+          'regional_prete',
+          'regional_injoignable',
+          'regional_injoignable_x2',
+          'regional_injoignable_x3',
+          'regional_reporte',
+          'regional_annule',
+        ].includes(o.status);
+        if (isRegionalStatus) return sum;
+        return sum + (o.remuneration || 0);
+      }, 0);
 
       const balance = (driver.initialBalance + totalRemuneration) - totalCashCollected;
 

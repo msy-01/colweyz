@@ -41,9 +41,15 @@ function fsCollectionName(name: string): string {
   return collectionsContext.firestoreCollectionName(name);
 }
 
-async function resyncDoc(logicalCollection: string, docId: string, data: Record<string, unknown>, path: string) {
+async function resyncDoc(
+  logicalCollection: string,
+  docId: string,
+  data: Record<string, unknown>,
+  path: string,
+  firestoreUpdateTime: string | null
+) {
   await processUpsert(
-    { collectionName: logicalCollection, docId, docPath: path },
+    { collectionName: logicalCollection, docId, docPath: path, firestoreUpdateTime },
     data,
     'set',
     { force }
@@ -51,6 +57,9 @@ async function resyncDoc(logicalCollection: string, docId: string, data: Record<
   const st = data.status ?? '—';
   const drv = data.driverId ?? 'null';
   console.log(`✅ ${logicalCollection}/${docId} (status=${st}, driverId=${drv})${force ? ' [force]' : ''}`);
+  if (data._syncSource === 'postgres' && logicalCollection === 'orders') {
+    console.log(`   ℹ️  doc marqué _syncSource=postgres — importé quand même (fix dashboard)`);
+  }
 }
 
 async function main() {
@@ -60,7 +69,8 @@ async function main() {
     const snap = await db.collectionGroup('configs').get();
     console.log(`financial_configs (collectionGroup): ${snap.size} docs`);
     for (const doc of snap.docs) {
-      await resyncDoc('financial_configs', doc.id, doc.data() as Record<string, unknown>, doc.ref.path);
+      const ut = doc.updateTime ? doc.updateTime.toDate().toISOString() : null;
+      await resyncDoc('financial_configs', doc.id, doc.data() as Record<string, unknown>, doc.ref.path, ut);
     }
     return;
   }
@@ -69,7 +79,8 @@ async function main() {
     const snap = await db.collection(fsName).get();
     console.log(`${collection}: ${snap.size} docs depuis Firestore`);
     for (const doc of snap.docs) {
-      await resyncDoc(collection, doc.id, doc.data() as Record<string, unknown>, doc.ref.path);
+      const ut = doc.updateTime ? doc.updateTime.toDate().toISOString() : null;
+      await resyncDoc(collection, doc.id, doc.data() as Record<string, unknown>, doc.ref.path, ut);
     }
     return;
   }
@@ -86,7 +97,13 @@ async function main() {
       console.error('settings/global introuvable');
       process.exit(1);
     }
-    await resyncDoc('settings', 'global', snap.data() as Record<string, unknown>, snap.ref.path);
+    await resyncDoc(
+      'settings',
+      'global',
+      snap.data() as Record<string, unknown>,
+      snap.ref.path,
+      snap.updateTime ? snap.updateTime.toDate().toISOString() : null
+    );
     return;
   }
 
@@ -96,7 +113,13 @@ async function main() {
       console.error(`config/${docIdOrFlag} introuvable`);
       process.exit(1);
     }
-    await resyncDoc('config', docIdOrFlag, snap.data() as Record<string, unknown>, snap.ref.path);
+    await resyncDoc(
+      'config',
+      docIdOrFlag,
+      snap.data() as Record<string, unknown>,
+      snap.ref.path,
+      snap.updateTime ? snap.updateTime.toDate().toISOString() : null
+    );
     return;
   }
 
@@ -106,7 +129,13 @@ async function main() {
     console.error(`${fsName}/${docIdOrFlag} introuvable dans Firestore`);
     process.exit(1);
   }
-  await resyncDoc(collection, docIdOrFlag, snap.data() as Record<string, unknown>, snap.ref.path);
+  await resyncDoc(
+    collection,
+    docIdOrFlag,
+    snap.data() as Record<string, unknown>,
+    snap.ref.path,
+    snap.updateTime ? snap.updateTime.toDate().toISOString() : null
+  );
 }
 
 main().catch((e) => {

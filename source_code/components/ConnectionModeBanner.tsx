@@ -7,6 +7,7 @@ import {
   forceApiFallback,
   forceFirestoreMode,
 } from '../services/dataService';
+import { isPgOnlyDeployment } from '../services/connectionMode';
 import { getApiBasePath } from '../services/api';
 
 export const ConnectionModeBanner: React.FC = () => {
@@ -17,6 +18,21 @@ export const ConnectionModeBanner: React.FC = () => {
   }, []);
 
   const isApi = mode === 'api';
+
+  /** colweyz.ddns.net : uniquement PostgreSQL (alimenté par sync Firestore → PG). */
+  if (isPgOnlyDeployment()) {
+    return (
+      <div className="px-4 py-2 text-sm flex flex-wrap items-center justify-center gap-2 border-b bg-slate-50 text-slate-700 border-slate-200">
+        <Database size={16} />
+        <span>
+          Données : <strong>PostgreSQL</strong>
+          <span className="text-xs text-slate-500 ml-1">
+            (miroir synchronisé depuis Firestore)
+          </span>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -25,7 +25,7 @@ router.get('/colweyz-debt', async (req, res) => {
       prisma.order.findMany({
         where: {
           status: { in: ['livré', 'terminé', 'expedition_livree'] },
-          ...(driverId ? { driverId } : {}),
+          ...(driverId ? { driverId } : { driverId: { not: 'depot_delta' } }),
         },
         select: {
           amount: true,

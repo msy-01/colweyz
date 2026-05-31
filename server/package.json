@@ -14,6 +14,8 @@
     "db:align": "tsx prisma/seed-from-export.ts ../colweyz_firebase_dump_2026-05-26.json --align",
     "db:backfill-payments": "tsx scripts/backfill-order-payment-methods.ts",
     "sync:du-colweyz": "tsx scripts/compare-du-colweyz.ts",
+    "sync:du-colweyz-live": "tsx scripts/compare-du-colweyz-live.ts",
+    "sync:driver-balances": "tsx scripts/compare-driver-balances.ts",
     "db:studio": "prisma studio",
     "sync": "tsx src/sync/worker.ts",
     "sync:financial-configs": "tsx scripts/sync-financial-configs-from-firestore.ts",
@@ -24,6 +26,8 @@
     "sync:diagnose": "tsx scripts/sync-diagnose.ts",
     "sync:resync-doc": "tsx scripts/resync-firestore-doc.ts",
     "sync:dashboard-gap": "tsx scripts/compare-dashboard-unassigned.ts",
+    "sync:deploy-worker": "bash scripts/deploy-sync-worker.sh",
+    "sync:verify": "tsx scripts/verify-forward-sync.ts",
     "validate": "tsx scripts/validate-export.ts",
     "reconcile": "tsx src/sync/reconcile.ts",
     "check-integrations": "tsx scripts/check-integrations.ts"

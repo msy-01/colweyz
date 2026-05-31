@@ -37,10 +37,21 @@ export const FundRequests: React.FC = () => {
       const driver = drivers.find(d => d.id === driverId);
       if (!driver) return 0;
 
-      const myOrders = orders.filter(o => o.driverId === driverId && (o.status === 'livré' || o.status === 'terminé'));
-      
+      const myOrders = orders.filter(
+        (o) =>
+          o.driverId === driverId &&
+          (o.status === 'livré' ||
+            o.status === 'terminé' ||
+            o.status === 'expedition_livree')
+      );
+
       const totalCashCollected = myOrders
-        .filter(o => o.paymentMethod === 'cash')
+        .filter(
+          (o) =>
+            o.modePaiement === 'Espèces' ||
+            (!o.modePaiement &&
+              (o.paymentMethod === 'cash' || !o.paymentMethod))
+        )
         .reduce((sum, o) => sum + o.amount, 0);
 
       const totalRemuneration = myOrders

@@ -7,6 +7,7 @@ import {
   getConnectionMode,
   setConnectionMode,
   isFirestoreUnavailableError,
+  isPgOnlyDeployment,
 } from './connectionMode';
 
 export { auth, db } from './dataService.firestore';
@@ -15,6 +16,7 @@ export { DEPOT_ID } from './dataService.api';
 type Service = typeof FirestoreDataService;
 
 function activeService(): Service {
+  if (isPgOnlyDeployment()) return ApiDataService as unknown as Service;
   return getConnectionMode() === 'api'
     ? (ApiDataService as unknown as Service)
     : FirestoreDataService;
@@ -37,7 +39,8 @@ function wrapMethod<K extends keyof Service>(method: K): Service[K] {
 
   const run = (...args: unknown[]) => {
     const apiFn = ApiDataService[method as keyof typeof ApiDataService];
-    const fn = getConnectionMode() === 'api' ? apiFn : firestoreFn;
+    const fn =
+      isPgOnlyDeployment() || getConnectionMode() === 'api' ? apiFn : firestoreFn;
     if (typeof fn !== 'function') {
       throw new Error(
         `[ColWeyz] Mode ${getConnectionMode()} : « ${String(method)} » indisponible.`
@@ -48,7 +51,11 @@ function wrapMethod<K extends keyof Service>(method: K): Service[K] {
 
   const fallback = (error: unknown, ...args: unknown[]) => {
     const apiFn = ApiDataService[method as keyof typeof ApiDataService];
-    if (!isFirestoreUnavailableError(error) || typeof apiFn !== 'function') {
+    if (
+      isPgOnlyDeployment() ||
+      !isFirestoreUnavailableError(error) ||
+      typeof apiFn !== 'function'
+    ) {
       throw error;
     }
     const reason = error instanceof Error ? error.message : String(error);
@@ -106,6 +113,7 @@ export function forceApiFallback(reason = 'Manuel') {
 }
 
 export function forceFirestoreMode() {
+  if (isPgOnlyDeployment()) return;
   setConnectionMode('firestore', 'Manuel');
 }
 

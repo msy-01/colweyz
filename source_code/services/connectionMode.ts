@@ -5,12 +5,15 @@ export type ConnectionMode = 'firestore' | 'api';
 let mode: ConnectionMode;
 let lastSwitchReason: string | null = null;
 
-/** true = démarrer en API si VITE_API_URL défini (secours prêt avant panne). */
+/** Déploiement miroir PG uniquement (ex. colweyz.ddns.net) — pas de bascule Firestore. */
+export function isPgOnlyDeployment(): boolean {
+  return import.meta.env.VITE_FORCE_API_MODE === 'true';
+}
+
 function initialMode(): ConnectionMode {
+  if (isPgOnlyDeployment()) return 'api';
   const url = import.meta.env.VITE_API_URL?.trim();
-  const forceApi = import.meta.env.VITE_FORCE_API_MODE === 'true';
-  if (forceApi && url) return 'api';
-  if (url) return 'firestore'; // Firestore d'abord, bascule auto si erreur
+  if (url) return 'firestore'; // Hybride Netlify/Cloud Run : Firestore d'abord
   return 'firestore';
 }
 
@@ -21,7 +24,10 @@ export function getConnectionMode(): ConnectionMode {
 }
 
 export function getConnectionModeLabel(): string {
-  return mode === 'api' ? 'PostgreSQL (secours)' : 'Firestore';
+  if (mode === 'api') {
+    return isPgOnlyDeployment() ? 'PostgreSQL' : 'PostgreSQL (secours)';
+  }
+  return 'Firestore';
 }
 
 export function getLastSwitchReason(): string | null {
@@ -29,6 +35,7 @@ export function getLastSwitchReason(): string | null {
 }
 
 export function setConnectionMode(next: ConnectionMode, reason?: string): void {
+  if (isPgOnlyDeployment() && next === 'firestore') return;
   if (mode === next) return;
   mode = next;
   lastSwitchReason = reason ?? null;

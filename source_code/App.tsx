@@ -23,7 +23,7 @@ import { Settings } from './pages/Settings';
 import { Driver, SystemUser } from './types';
 import { DataService } from './services/dataService';
 import { authService } from './services/authService';
-import { subscribeConnectionMode } from './services/connectionMode';
+import { subscribeConnectionMode, isPgOnlyDeployment } from './services/connectionMode';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -57,7 +57,9 @@ function App() {
     return subscribeConnectionMode(({ mode }) => {
       if (mode === 'api' && !localStorage.getItem('jwt_token')) {
         setAuthError(
-          'Mode PostgreSQL (secours) : déconnectez-vous et reconnectez-vous avec le mot de passe base PG (ex. admin).'
+          isPgOnlyDeployment()
+            ? 'Reconnectez-vous avec votre identifiant et mot de passe (base PostgreSQL).'
+            : 'Mode PostgreSQL (secours) : déconnectez-vous et reconnectez-vous avec le mot de passe base PG (ex. admin).'
         );
       } else if (mode === 'api') {
         setAuthError(null);

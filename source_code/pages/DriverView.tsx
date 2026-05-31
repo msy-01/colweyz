@@ -1,8 +1,10 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, isSameDay, isBefore, isValid, parse } from 'date-fns';
-import { Driver, Order, FundRequest, Product } from '../types';
+import { Driver, Order, FundRequest, Product, Zone } from '../types';
 import { DataService, auth, DEPOT_ID } from '../services/dataService';
+import { getConnectionMode } from '../services/connectionMode';
+import { api } from '../services/api';
 import { formatNumber, formatFCFA } from '../utils/formatters';
 import { InvoiceService } from '../services/invoiceService';
 import { parseProductCommand } from '../utils/productParser';
@@ -17,6 +19,9 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
   const [driver, setDriver] = useState<Driver>(initialDriver);
   const [driverId, setDriverId] = useState<string>(initialDriver.id); // The simple ID used for filtering
   const [orders, setOrders] = useState<Order[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  /** En mode API : solde calculé côté serveur (aligné admin Balances). */
+  const [serverBalance, setServerBalance] = useState<number | null>(null);
   const [allFundRequests, setAllFundRequests] = useState<FundRequest[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [driverStock, setDriverStock] = useState<any[]>([]);
@@ -71,15 +76,17 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
                 needsUpdate = true;
             }
 
+            const synced: Driver = {
+              ...current,
+              ...updateData,
+              id: finalId,
+              initialBalance: Number(current.initialBalance) || 0,
+            };
             if (needsUpdate) {
-                const updatedDriver = { ...current, ...updateData };
-                await DataService.saveDriver(updatedDriver);
-                setDriver(updatedDriver);
-                setDriverId(finalId);
-            } else {
-                setDriver(current);
-                setDriverId(finalId);
+                await DataService.saveDriver(synced);
             }
+            setDriver(synced);
+            setDriverId(finalId);
         } catch (e) {
             console.error("DriverView: Error syncing driver:", e);
         } finally {
@@ -206,6 +213,24 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
         authUnsubscribe();
     };
   }, [driverId, driver.phone, processingId, isSyncingDriver]);
+
+  useEffect(() => {
+    const unsub = DataService.subscribeToZones(setZones);
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (getConnectionMode() !== 'api') {
+      setServerBalance(null);
+      return;
+    }
+    api
+      .get<{ balance: number }>(
+        `/stats/colweyz-debt?driverId=${encodeURIComponent(driverId)}`
+      )
+      .then((r) => setServerBalance(r.balance))
+      .catch(() => setServerBalance(null));
+  }, [driverId, orders.length, driver.initialBalance]);
 
   const activeFundRequests = useMemo(() => {
       return allFundRequests.filter(r => r.status === 'pending' || r.status === 'paid_by_driver');
@@ -350,10 +375,34 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
         });
   }, [orders, selectedDate, donePaymentFilter]);
 
-  // BALANCE CALCULATIONS
+  // BALANCE CALCULATIONS (aligné Balances.tsx admin)
   const balanceStats = useMemo(() => {
-      const deliveredOrders = orders.filter(o => o.status === 'livré' || o.status === 'terminé' || o.status === 'expedition_livree');
-      
+      const isRegionalOrder = (o: Order) => {
+        const isRegionalStatus = [
+          'regional_en_attente',
+          'expedition_en_cours',
+          'expedition_livree',
+          'regional_contacte',
+          'regional_relance',
+          'regional_prete',
+          'regional_injoignable',
+          'regional_injoignable_x2',
+          'regional_injoignable_x3',
+          'regional_reporte',
+          'regional_annule',
+        ].includes(o.status);
+        const isRegionalZone =
+          !!o.zoneId && zones.find((z) => z.id === o.zoneId)?.type === 'regional';
+        return isRegionalStatus || (isRegionalZone && o.status === 'validé');
+      };
+
+      const deliveredOrders = orders.filter(
+        (o) =>
+          o.status === 'livré' ||
+          o.status === 'terminé' ||
+          o.status === 'expedition_livree'
+      );
+
       const totalCA = deliveredOrders.reduce((sum, o) => sum + o.amount, 0);
 
       const totalCashCollected = deliveredOrders
@@ -364,17 +413,19 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
         .filter(o => o.modePaiement === 'Wave' || o.modePaiement === 'OM' || (o.paymentMethod === 'wave' || o.paymentMethod === 'om'))
         .reduce((sum, o) => sum + o.amount, 0);
 
-      const totalRemuneration = deliveredOrders
-        .reduce((sum, o) => sum + (o.remuneration || 0), 0);
+      const totalRemuneration = deliveredOrders.reduce((sum, o) => {
+        if (isRegionalOrder(o)) return sum;
+        return sum + (o.remuneration || 0);
+      }, 0);
 
-      // Driver Point of View:
-      // Solde = (Ce qu'on me doit) - (Ce que je dois)
-      // Solde = (InitialBalance + Remuneration) - (CashCollected)
       // Positive = Colweyz owes Driver. Negative = Driver owes Colweyz.
-      const currentBalance = (driver.initialBalance + totalRemuneration) - totalCashCollected;
+      const clientBalance =
+        (driver.initialBalance + totalRemuneration) - totalCashCollected;
+      const currentBalance =
+        serverBalance !== null ? serverBalance : clientBalance;
 
       return { totalCA, totalCashCollected, totalWaveOM, totalRemuneration, currentBalance };
-  }, [orders, driver.initialBalance]);
+  }, [orders, driver.initialBalance, zones, serverBalance]);
 
   const dailyStats = useMemo(() => {
       const dateOrders = orders.filter(o => 
@@ -402,8 +453,33 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
       const history: any[] = [];
       
       // 1. Orders (Cash Collection & Gains)
+      const isRegionalOrder = (o: Order) => {
+        const isRegionalStatus = [
+          'regional_en_attente',
+          'expedition_en_cours',
+          'expedition_livree',
+          'regional_contacte',
+          'regional_relance',
+          'regional_prete',
+          'regional_injoignable',
+          'regional_injoignable_x2',
+          'regional_injoignable_x3',
+          'regional_reporte',
+          'regional_annule',
+        ].includes(o.status);
+        const isRegionalZone =
+          !!o.zoneId && zones.find((z) => z.id === o.zoneId)?.type === 'regional';
+        return isRegionalStatus || (isRegionalZone && o.status === 'validé');
+      };
+
       orders.forEach(o => {
-          if ((o.status === 'livré' || o.status === 'terminé') && o.deliveredAt) {
+          const histDate = o.deliveredAt || o.date;
+          if (
+            (o.status === 'livré' ||
+              o.status === 'terminé' ||
+              o.status === 'expedition_livree') &&
+            histDate
+          ) {
               const isCash = o.modePaiement === 'Espèces' || (!o.modePaiement && (o.paymentMethod === 'cash' || !o.paymentMethod));
               const mode = o.modePaiement || (o.paymentMethod === 'wave' ? 'Wave' : o.paymentMethod === 'om' ? 'OM' : 'Espèces');
               const productName = o.products?.[0]?.name || (o.productDetails ? parseProductCommand(o.productDetails.split('\n')[0]).productName : 'Produit');
@@ -411,7 +487,7 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
               // Collection entry (Driver owes this money if cash, or just for record if digital)
               history.push({
                   id: `col-${o.id}`,
-                  date: o.deliveredAt,
+                  date: histDate,
                   type: 'collection',
                   amount: o.amount,
                   label: `Encaissement #${o.id}`,
@@ -422,11 +498,10 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
                   productName: productName
               });
 
-              // Remuneration (Driver earns this -> Positive impact on balance)
-              if (o.remuneration) {
+              if (o.remuneration && !isRegionalOrder(o)) {
                   history.push({
                       id: `rem-${o.id}`,
-                      date: o.deliveredAt,
+                      date: histDate,
                       type: 'gain',
                       amount: o.remuneration,
                       label: `Commission #${o.id}`,
@@ -460,7 +535,7 @@ export const DriverView: React.FC<DriverViewProps> = ({ driver: initialDriver, o
       return history
         .filter(h => h.date.startsWith(selectedDate))
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [orders, allFundRequests, selectedDate]);
+  }, [orders, allFundRequests, selectedDate, zones]);
 
   let displayOrders = activeTab === 'todo' ? todoOrders : activeTab === 'unreachable' ? unreachableOrders : doneOrders;
 
