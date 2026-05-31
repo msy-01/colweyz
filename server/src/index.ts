@@ -18,6 +18,7 @@ import settingsRoutes from './routes/settings.js';
 import fundRequestsRoutes from './routes/fundRequests.js';
 import claudeRoutes from './routes/claude.js';
 import statsRoutes from './routes/stats.js';
+import shopifyRoutes from './routes/shopify.js';
 import { ensureStockDriver } from './lib/stock-drivers.js';
 
 const app = express();
@@ -52,6 +53,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/fund-requests', fundRequestsRoutes);
 app.use('/api/claude', claudeRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/shopify', shopifyRoutes);
 
 // Global error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
