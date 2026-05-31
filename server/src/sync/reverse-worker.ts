@@ -365,6 +365,7 @@ function serializeSettings(row: any): Record<string, unknown> {
     logoUrl: row.logoUrl,
     shopifyDomain: row.shopifyDomain,
     ignoredShopifyIds: row.ignoredShopifyIds ?? [],
+    stockMigratedV2: row.stockMigratedV2,
     updatedAt: toIso(row.updatedAt),
     ...META,
   };
@@ -896,14 +897,13 @@ async function loop(): Promise<void> {
           console.log(`✅ reverse ${h.name}: ${count} doc(s)`);
         }
 
-        /* Désactivé temporairement pour sécurité (Reverse Sync)
+        // Réconciliation des suppressions
         if (h.reconcileDeletes && cycle % DELETE_RECONCILE_EVERY === 0) {
           const removed = await h.reconcileDeletes();
           if (removed > 0) {
             console.log(`🗑️ reverse ${h.name}: ${removed} suppression(s) Firestore`);
           }
         }
-        */
       }
     } catch (error) {
       console.error('❌ reverse sync error:', error);
