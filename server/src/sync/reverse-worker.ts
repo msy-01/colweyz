@@ -897,6 +897,7 @@ async function loop(): Promise<void> {
           console.log(`✅ reverse ${h.name}: ${count} doc(s)`);
         }
 
+        /* Désactivé temporairement pour sécurité (Reverse Sync)
         // Réconciliation des suppressions
         if (h.reconcileDeletes && cycle % DELETE_RECONCILE_EVERY === 0) {
           const removed = await h.reconcileDeletes();
@@ -904,6 +905,7 @@ async function loop(): Promise<void> {
             console.log(`🗑️ reverse ${h.name}: ${removed} suppression(s) Firestore`);
           }
         }
+        */
       }
     } catch (error) {
       console.error('❌ reverse sync error:', error);
