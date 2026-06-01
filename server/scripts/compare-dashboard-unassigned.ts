@@ -1,7 +1,5 @@
 /**
- * Compare PG vs Firestore pour le Dashboard :
- * - commandes « à attribuer »
- * - commandes « programmées » (futur)
+ * Compare PG vs Firestore pour le Dashboard (rapide, sans requête par ID).
  *
  * Usage: cd server && npm run sync:dashboard-gap
  */
@@ -27,7 +25,13 @@ const app = admin.initializeApp({ credential: admin.credential.cert(sa) }, 'dash
 const dbId = process.env.FIREBASE_DATABASE_ID;
 const db = dbId ? getFirestore(app, dbId) : getFirestore(app);
 
-function sliceFromFs(data: FirebaseFirestore.DocumentData) {
+type OrderSlice = {
+  status: string;
+  driverId: string | null;
+  scheduledAt: string | null;
+};
+
+function sliceFromFs(data: FirebaseFirestore.DocumentData): OrderSlice {
   return {
     status: String(data.status ?? 'validé'),
     driverId: (data.driverId as string) || null,
@@ -35,99 +39,90 @@ function sliceFromFs(data: FirebaseFirestore.DocumentData) {
   };
 }
 
-async function compareBucket(
+function compareBucket(
   label: string,
-  pgIds: Set<string>,
-  fsIds: Set<string>
-): Promise<number> {
+  pgMap: Map<string, OrderSlice>,
+  fsMap: Map<string, OrderSlice>,
+  predicate: (s: OrderSlice) => boolean
+): number {
+  const pgIds = new Set<string>();
+  const fsIds = new Set<string>();
+
+  for (const [id, s] of pgMap) {
+    if (predicate(s)) pgIds.add(id);
+  }
+  for (const [id, s] of fsMap) {
+    if (predicate(s)) fsIds.add(id);
+  }
+
   console.log(`\n📋 ${label}`);
   console.log(`   PG: ${pgIds.size}  |  Firestore: ${fsIds.size}`);
 
-  let mismatch = 0;
   const onlyPg = [...pgIds].filter((id) => !fsIds.has(id));
   const onlyFs = [...fsIds].filter((id) => !pgIds.has(id));
+  const mismatch = onlyPg.length + onlyFs.length;
 
-  for (const id of onlyPg.slice(0, 30)) {
-    mismatch++;
-    const pg = await prisma.order.findUnique({
-      where: { id },
-      select: { status: true, driverId: true, scheduledAt: true },
-    });
-    const snap = await db.collection('orders').doc(id).get();
-    const fs = snap.exists ? sliceFromFs(snap.data()!) : null;
-    console.log(
-      `   ≠  ${id}  uniquement PG | PG: ${pg?.status}/${pg?.driverId ?? 'null'}/sched=${pg?.scheduledAt ?? 'null'}`
-    );
-    if (fs) {
+  const show = (ids: string[], labelSide: string, getOther: (id: string) => OrderSlice | undefined) => {
+    for (const id of ids.slice(0, 20)) {
+      const self = labelSide === 'PG' ? pgMap.get(id)! : fsMap.get(id)!;
+      const other = getOther(id);
       console.log(
-        `        FS: ${fs.status}/${fs.driverId ?? 'null'}/sched=${fs.scheduledAt ?? 'null'}`
+        `   ≠  ${id}  uniquement ${labelSide} | ${labelSide}: ${self.status}/${self.driverId ?? 'null'}/sched=${self.scheduledAt ?? 'null'}`
       );
-    } else {
-      console.log('        FS: (absent)');
+      if (other) {
+        const side = labelSide === 'PG' ? 'FS' : 'PG';
+        console.log(
+          `        ${side}: ${other.status}/${other.driverId ?? 'null'}/sched=${other.scheduledAt ?? 'null'}`
+        );
+      }
     }
-  }
-  if (onlyPg.length > 30) console.log(`   … +${onlyPg.length - 30} autres uniquement PG`);
+    if (ids.length > 20) console.log(`   … +${ids.length - 20} autres uniquement ${labelSide}`);
+  };
 
-  for (const id of onlyFs.slice(0, 30)) {
-    mismatch++;
-    const snap = await db.collection('orders').doc(id).get();
-    const fs = sliceFromFs(snap.data()!);
-    const pg = await prisma.order.findUnique({
-      where: { id },
-      select: { status: true, driverId: true, scheduledAt: true },
-    });
-    console.log(
-      `   ≠  ${id}  uniquement FS | FS: ${fs.status}/${fs.driverId ?? 'null'}/sched=${fs.scheduledAt ?? 'null'}`
-    );
-    if (pg) {
-      console.log(
-        `        PG: ${pg.status}/${pg.driverId ?? 'null'}/sched=${pg.scheduledAt ?? 'null'}`
-      );
-    } else {
-      console.log('        PG: (absent)');
-    }
-  }
-  if (onlyFs.length > 30) console.log(`   … +${onlyFs.length - 30} autres uniquement FS`);
+  show(onlyPg, 'PG', (id) => fsMap.get(id));
+  show(onlyFs, 'FS', (id) => pgMap.get(id));
 
   if (mismatch === 0) console.log('   ✓  Listes identiques');
   return mismatch;
 }
 
 async function main() {
-  const pgOrders = await prisma.order.findMany({
-    select: { id: true, status: true, driverId: true, scheduledAt: true },
-  });
-
-  const pgUnassigned = new Set(
-    pgOrders.filter((o) => isDashboardUnassigned(o)).map((o) => o.id)
-  );
-  const pgScheduled = new Set(
-    pgOrders.filter((o) => isDashboardScheduled(o)).map((o) => o.id)
-  );
-
-  const fsUnassigned = new Set<string>();
-  const fsScheduled = new Set<string>();
-
-  const snap = await db.collection('orders').get();
-  for (const doc of snap.docs) {
-    const s = sliceFromFs(doc.data());
-    if (isDashboardUnassigned(s)) fsUnassigned.add(doc.id);
-    if (isDashboardScheduled(s)) fsScheduled.add(doc.id);
-  }
-
+  const t0 = Date.now();
   console.log('\n🔍 Diagnostic Dashboard ColWeyz (PG ↔ Firestore)\n');
 
-  const m1 = await compareBucket('Commandes à attribuer', pgUnassigned, fsUnassigned);
-  const m2 = await compareBucket('Commandes programmées (futur)', pgScheduled, fsScheduled);
+  const pgRows = await prisma.order.findMany({
+    select: { id: true, status: true, driverId: true, scheduledAt: true },
+  });
+  const pgMap = new Map<string, OrderSlice>(
+    pgRows.map((r) => [r.id, { status: r.status, driverId: r.driverId, scheduledAt: r.scheduledAt }])
+  );
+
+  const snap = await db.collection('orders').get();
+  const fsMap = new Map<string, OrderSlice>();
+  for (const doc of snap.docs) {
+    fsMap.set(doc.id, sliceFromFs(doc.data()));
+  }
+
+  const m1 = compareBucket(
+    'Commandes à attribuer',
+    pgMap,
+    fsMap,
+    isDashboardUnassigned
+  );
+  const m2 = compareBucket(
+    'Commandes programmées (futur)',
+    pgMap,
+    fsMap,
+    isDashboardScheduled
+  );
 
   const total = m1 + m2;
   if (total > 0) {
     console.log('\n── Correctifs suggérés ──');
     console.log('  npm run sync:normalize-scheduled -- --apply');
     console.log('  npm run sync:resync-doc -- orders <id> --force');
-    console.log('  npm run sync:resync-doc -- orders --all --force');
   }
-  console.log('');
+  console.log(`\nDurée: ${((Date.now() - t0) / 1000).toFixed(1)}s\n`);
 }
 
 main()
