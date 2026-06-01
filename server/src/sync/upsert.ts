@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
+import { normalizeScheduledAtIso } from '../lib/scheduled-at.js';
 import { paymentMethodFromFirestore } from '../lib/payment-method.js';
 import { isPostgresSyncEcho } from '../lib/firestore-sync.js';
 import {
@@ -32,14 +33,8 @@ export async function processUpsert(
     return;
   }
 
-  // Éviter boucle reverse→forward : tout doc marqué _syncSource='postgres'
-  // a été poussé par le reverse worker — ne pas le réimporter dans PG
-  // (sinon updatedAt serait bumpé, déclenchant un nouveau push reverse → boucle infinie).
-  // Exception : --force (resync manuel) doit toujours réimporter.
-  const isEcho = isPostgresSyncEcho(data);
-  if (isEcho && !options?.force) {
-    return;
-  }
+  // Le tag _syncSource='postgres' n'est plus utilisé pour bloquer l'écho.
+  // getEffectiveSourceUpdatedAt et shouldSkipStaleUpdate vont ignorer la boucle naturellement.
 
   const sourceUpdatedAt = getEffectiveSourceUpdatedAt(
     collectionName,
@@ -147,7 +142,7 @@ async function upsertOrder(id: string, data: Record<string, unknown>) {
     assignedAt: (data.assignedAt as string) || null,
     deliveredAt: (data.deliveredAt as string) || null,
     postponedAt: (data.postponedAt as string) || null,
-    scheduledAt: (data.scheduledAt as string) || null,
+    scheduledAt: normalizeScheduledAtIso(data),
     importedAt: (data.importedAt as string) || null,
     refusedBy: (data.refusedBy as string) || null,
     purchaseCost: (data.purchaseCost as number) ?? null,

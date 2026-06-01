@@ -1,6 +1,7 @@
 /** Champs autorisés pour Prisma — évite les 500 sur champs Firestore/frontend inconnus. */
 
 import { paymentMethodFromRequestBody } from './payment-method.js';
+import { normalizeScheduledAtIso } from './scheduled-at.js';
 
 export function sanitizeDriverBody(body: Record<string, unknown>, id: string) {
   return {
@@ -51,7 +52,7 @@ export function sanitizeOrderBody(body: Record<string, unknown>, id: string) {
     assignedAt: nullStr(body.assignedAt),
     deliveredAt: nullStr(body.deliveredAt),
     postponedAt: nullStr(body.postponedAt),
-    scheduledAt: nullStr(body.scheduledAt),
+    scheduledAt: normalizeScheduledAtIso(body),
     importedAt: nullStr(body.importedAt),
     refusedBy: nullStr(body.refusedBy),
     purchaseCost: nullInt(body.purchaseCost),

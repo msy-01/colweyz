@@ -58,12 +58,17 @@ export function getEffectiveSourceUpdatedAt(
       ? getPurchaseOrderSourceUpdatedAt(data)
       : getSourceUpdatedAt(data);
 
-  let best: number | null = null;
-  for (const raw of [fromDoc, firestoreUpdateTime]) {
-    const t = parseTimestamp(raw);
-    if (t !== null && (best === null || t > best)) best = t;
+  if (fromDoc) {
+    const t = parseTimestamp(fromDoc);
+    if (t !== null) return new Date(t).toISOString();
   }
-  return best !== null ? new Date(best).toISOString() : null;
+
+  if (firestoreUpdateTime) {
+    const t = parseTimestamp(firestoreUpdateTime);
+    if (t !== null) return new Date(t).toISOString();
+  }
+  
+  return null;
 }
 
 /**

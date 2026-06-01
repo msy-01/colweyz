@@ -26,6 +26,7 @@
     "sync:diagnose": "tsx scripts/sync-diagnose.ts",
     "sync:resync-doc": "tsx scripts/resync-firestore-doc.ts",
     "sync:dashboard-gap": "tsx scripts/compare-dashboard-unassigned.ts",
+    "sync:normalize-scheduled": "tsx scripts/normalize-scheduled-orders.ts",
     "sync:deploy-worker": "bash scripts/deploy-sync-worker.sh",
     "sync:verify": "tsx scripts/verify-forward-sync.ts",
     "validate": "tsx scripts/validate-export.ts",
