@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { firestoreSyncTimestamp } from '../lib/firestore-sync.js';
+import { upsertFinancialConfigFromApi } from '../lib/financial-config.js';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../middleware/auth.js';
 
@@ -32,20 +33,21 @@ router.get('/configs', async (_req, res) => {
 // POST /api/finance/configs
 router.post('/configs', async (req, res) => {
   try {
-    const data = req.body;
-    const dateEffet = data.dateEffet || new Date().toISOString().split('T')[0];
-    const id = data.id || `fc_${data.productId}_${dateEffet}_${Date.now()}`;
-
+    const payload = await upsertFinancialConfigFromApi(req.body as Record<string, unknown>);
     const fsAt = firestoreSyncTimestamp();
-    const config = await prisma.financialConfig.upsert({
-      where: { id },
-      create: { id, ...data, dateEffet, firestoreUpdatedAt: fsAt },
-      update: { ...data, dateEffet, firestoreUpdatedAt: fsAt }
+    const config = await prisma.financialConfig.update({
+      where: { id: payload.id },
+      data: { firestoreUpdatedAt: fsAt },
     });
-    res.status(201).json(config);
+    res.status(201).json({
+      ...config,
+      updatedAt: config.updatedAt.toISOString(),
+      createdAt: config.createdAt.toISOString(),
+    });
   } catch (error) {
     console.error('POST /finance/configs error:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
+    const msg = error instanceof Error ? error.message : 'Erreur serveur';
+    res.status(msg.includes('requis') ? 400 : 500).json({ error: msg });
   }
 });
 

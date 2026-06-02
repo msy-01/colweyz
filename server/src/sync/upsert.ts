@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
+import { upsertFinancialConfigRow } from '../lib/financial-config.js';
 import { normalizeScheduledAtIso } from '../lib/scheduled-at.js';
 import { paymentMethodFromFirestore } from '../lib/payment-method.js';
 import { isPostgresSyncEcho } from '../lib/firestore-sync.js';
@@ -373,26 +374,7 @@ async function upsertFinancialConfig(
   data: Record<string, unknown>,
   docPath?: string
 ) {
-  const meta = resolveFinancialConfigMeta(docId, data, docPath);
-  if (!meta) return;
-
-  const { productId, dateEffet } = meta;
-  await ensureProductExists(productId, `Produit ${productId} (Restauré)`);
-
-  const payload = {
-    cau: (data.cau as number) ?? (data.caUnitaire as number) ?? 0,
-    appro: (data.appro as number) ?? (data.coutAppro as number) ?? 0,
-    dailyBudgetUsd: (data.dailyBudgetUsd as number) ?? (data.budgetJournalier as number) ?? 0,
-    isCampaignActive: (data.isCampaignActive as boolean) ?? true,
-    dateEffet,
-    firestoreUpdatedAt: getSourceUpdatedAt(data),
-  };
-
-  await prisma.financialConfig.upsert({
-    where: { id: docId },
-    create: { id: docId, productId, ...payload },
-    update: payload,
-  });
+  await upsertFinancialConfigRow(docId, data, docPath);
 }
 
 async function upsertDailyEntry(docId: string, data: Record<string, unknown>) {

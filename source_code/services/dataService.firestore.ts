@@ -307,6 +307,29 @@ const localSave = (key: string, data: any) => {
   localStorage.setItem(key, JSON.stringify(data));
 };
 
+/** Enrichit productId / dateEffet depuis le chemin campagnes/{pid}/configs/{date}. */
+function mapFinancialConfigDoc(
+  docSnap: { id: string; data: () => Record<string, unknown>; ref: { path: string } }
+): ProductFinancialConfig {
+  const data = docSnap.data();
+  const parts = docSnap.ref.path.split('/');
+  const campIdx = parts.indexOf('campagnes');
+  const productId =
+    (data.productId as string) ||
+    (campIdx >= 0 && parts[campIdx + 1] ? parts[campIdx + 1] : '');
+  const dateEffet = (data.dateEffet as string) || docSnap.id;
+  return {
+    ...(data as ProductFinancialConfig),
+    productId,
+    dateEffet,
+    updatedAt:
+      (data.updatedAt as string) ||
+      (typeof data.updatedAt === 'object' && data.updatedAt !== null
+        ? new Date(data.updatedAt as Date).toISOString()
+        : new Date().toISOString()),
+  };
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   adminPhone: '221770000000',
   logoUrl: '',
@@ -813,7 +836,7 @@ export const FirestoreDataService = {
   subscribeToFinancialConfigs: (callback: (configs: ProductFinancialConfig[]) => void) => {
     if (!db || !auth.currentUser) return () => {};
     return onSnapshot(collectionGroup(db, 'configs'), (snap) => {
-      const configs = snap.docs.map(doc => doc.data() as ProductFinancialConfig);
+      const configs = snap.docs.map((d) => mapFinancialConfigDoc(d));
       callback(configs);
     });
   },
@@ -2101,16 +2124,16 @@ export const FirestoreDataService = {
   },
 
   // --- FINANCIAL CONFIGS ---
+
   getFinancialConfigs: async (): Promise<ProductFinancialConfig[]> => {
       if (db && auth.currentUser) {
           return firestoreCall(OperationType.LIST, 'configs (collectionGroup)', async () => {
               const snapshot = await getDocs(collectionGroup(db, 'configs'));
               if (snapshot.empty) {
-                  // Fallback to legacy structure just in case, but migration should have handled it
                   const snapshotLegacy = await getDocs(collection(db, 'financial_configs'));
-                  return snapshotLegacy?.docs?.map(doc => ({ ...doc.data() } as ProductFinancialConfig)) ?? [];
+                  return snapshotLegacy?.docs?.map((d) => mapFinancialConfigDoc(d)) ?? [];
               }
-              return snapshot?.docs?.map(doc => ({ ...doc.data() } as ProductFinancialConfig)) ?? [];
+              return snapshot?.docs?.map((d) => mapFinancialConfigDoc(d)) ?? [];
           });
       }
       return localLoad(STORAGE_KEYS.FINANCIAL_CONFIGS, []);

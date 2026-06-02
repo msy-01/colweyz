@@ -84,6 +84,9 @@ export async function shouldSkipStaleUpdate(
   // le dernier import/align, pas Firestore → ne jamais ignorer un événement live.
   if (collectionName === 'orders') return false;
 
+  // financial_configs : source = campagnes/{pid}/configs ; toujours suivre Firestore.
+  if (collectionName === 'financial_configs') return false;
+
   if (!sourceUpdatedAt) return false;
   const incoming = parseTimestamp(sourceUpdatedAt);
   if (incoming === null) return false;
