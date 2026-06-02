@@ -1,5 +1,10 @@
 import { Router } from 'express';
 import { firestoreSyncTimestamp } from '../lib/firestore-sync.js';
+import {
+  normalizeDailyEntrySnapshot,
+  normalizeDailyFinanceSnapshot,
+  resolveFinanceDate,
+} from '../lib/finance-data.js';
 import { upsertFinancialConfigFromApi } from '../lib/financial-config.js';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -77,20 +82,26 @@ router.get('/daily-entries', async (_req, res) => {
 // POST /api/finance/daily-entries
 router.post('/daily-entries', async (req, res) => {
   try {
-    const data = req.body;
+    const data = req.body as Record<string, unknown>;
+    const date = resolveFinanceDate(String(data.date ?? ''), data);
+    if (!date) {
+      res.status(400).json({ error: 'date requise (YYYY-MM-DD)' });
+      return;
+    }
+    const snap = normalizeDailyEntrySnapshot({ ...data, date });
     const entry = await prisma.dailyEntry.upsert({
-      where: { date: data.date },
+      where: { date },
       create: {
-        date: data.date,
-        exchangeRate: data.exchangeRate,
-        entries: data.entries,
-        productOrder: data.productOrder || []
+        date,
+        exchangeRate: snap.exchangeRate,
+        entries: snap.entries,
+        productOrder: snap.productOrder,
       },
       update: {
-        exchangeRate: data.exchangeRate,
-        entries: data.entries,
-        productOrder: data.productOrder || []
-      }
+        exchangeRate: snap.exchangeRate,
+        entries: snap.entries,
+        productOrder: snap.productOrder,
+      },
     });
     res.status(201).json(entry);
   } catch (error) {
@@ -132,18 +143,24 @@ router.get('/daily-finance/:date', async (req, res) => {
 // POST /api/finance/daily-finance
 router.post('/daily-finance', async (req, res) => {
   try {
-    const data = req.body;
+    const data = req.body as Record<string, unknown>;
+    const date = resolveFinanceDate(String(data.date ?? ''), data);
+    if (!date) {
+      res.status(400).json({ error: 'date requise (YYYY-MM-DD)' });
+      return;
+    }
+    const snap = normalizeDailyFinanceSnapshot({ ...data, date });
     const entry = await prisma.dailyFinance.upsert({
-      where: { date: data.date },
+      where: { date },
       create: {
-        date: data.date,
-        otherRevenues: data.otherRevenues || [],
-        otherExpenses: data.otherExpenses || []
+        date,
+        otherRevenues: snap.otherRevenues,
+        otherExpenses: snap.otherExpenses,
       },
       update: {
-        otherRevenues: data.otherRevenues || [],
-        otherExpenses: data.otherExpenses || []
-      }
+        otherRevenues: snap.otherRevenues,
+        otherExpenses: snap.otherExpenses,
+      },
     });
     res.status(201).json(entry);
   } catch (error) {

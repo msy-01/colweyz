@@ -1,6 +1,11 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { upsertFinancialConfigRow } from '../lib/financial-config.js';
+import {
+  normalizeDailyEntrySnapshot,
+  normalizeDailyFinanceSnapshot,
+  resolveFinanceDate,
+} from '../lib/finance-data.js';
 import { normalizeScheduledAtIso } from '../lib/scheduled-at.js';
 import { paymentMethodFromFirestore } from '../lib/payment-method.js';
 import { isPostgresSyncEcho } from '../lib/firestore-sync.js';
@@ -378,35 +383,39 @@ async function upsertFinancialConfig(
 }
 
 async function upsertDailyEntry(docId: string, data: Record<string, unknown>) {
-  const date = (data.date as string) || docId;
+  const date = resolveFinanceDate(docId, data);
+  if (!date) return;
+  const snap = normalizeDailyEntrySnapshot(data);
   await prisma.dailyEntry.upsert({
     where: { date },
     create: {
       date,
-      exchangeRate: (data.exchangeRate as number) || 600,
-      entries: data.entries ?? {},
-      productOrder: (data.productOrder as string[]) || [],
+      exchangeRate: snap.exchangeRate,
+      entries: snap.entries,
+      productOrder: snap.productOrder,
     },
     update: {
-      exchangeRate: (data.exchangeRate as number) || 600,
-      entries: data.entries ?? {},
-      productOrder: (data.productOrder as string[]) || [],
+      exchangeRate: snap.exchangeRate,
+      entries: snap.entries,
+      productOrder: snap.productOrder,
     },
   });
 }
 
 async function upsertDailyFinance(docId: string, data: Record<string, unknown>) {
-  const date = (data.date as string) || docId;
+  const date = resolveFinanceDate(docId, data);
+  if (!date) return;
+  const snap = normalizeDailyFinanceSnapshot(data);
   await prisma.dailyFinance.upsert({
     where: { date },
     create: {
       date,
-      otherRevenues: data.otherRevenues ?? [],
-      otherExpenses: data.otherExpenses ?? [],
+      otherRevenues: snap.otherRevenues,
+      otherExpenses: snap.otherExpenses,
     },
     update: {
-      otherRevenues: data.otherRevenues ?? [],
-      otherExpenses: data.otherExpenses ?? [],
+      otherRevenues: snap.otherRevenues,
+      otherExpenses: snap.otherExpenses,
     },
   });
 }
@@ -678,6 +687,16 @@ export async function reconcileDeletions(collectionName: string, activeIds: Set<
       }
       case 'daily_entries': {
         const rows = await prisma.dailyEntry.findMany({ select: { date: true } });
+        for (const r of rows) {
+          if (!activeIds.has(r.date)) {
+            await handleDelete({ collectionName, docId: r.date });
+            deletedCount++;
+          }
+        }
+        break;
+      }
+      case 'daily_finance': {
+        const rows = await prisma.dailyFinance.findMany({ select: { date: true } });
         for (const r of rows) {
           if (!activeIds.has(r.date)) {
             await handleDelete({ collectionName, docId: r.date });

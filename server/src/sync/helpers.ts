@@ -87,6 +87,9 @@ export async function shouldSkipStaleUpdate(
   // financial_configs : source = campagnes/{pid}/configs ; toujours suivre Firestore.
   if (collectionName === 'financial_configs') return false;
 
+  // daily_finance : ancienne app (Firestore) + nouvelle app (API) — toujours suivre Firestore.
+  if (collectionName === 'daily_finance') return false;
+
   if (!sourceUpdatedAt) return false;
   const incoming = parseTimestamp(sourceUpdatedAt);
   if (incoming === null) return false;
