@@ -99,7 +99,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     try {
       await attemptLoginFirestore();
     } catch (err: unknown) {
-      if (isFirestoreUnavailableError(err) && import.meta.env.VITE_API_URL) {
+      if (isFirestoreUnavailableError(err) && isApiSecoursAvailable()) {
         forceApiFallback(err instanceof Error ? err.message : String(err));
         try {
           await loginViaApi();

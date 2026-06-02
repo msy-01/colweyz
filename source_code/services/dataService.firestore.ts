@@ -737,7 +737,7 @@ export const FirestoreDataService = {
     return onSnapshot(collection(db, 'fund_requests'), (snapshot) => {
       const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FundRequest));
       callback(requests);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'fund_requests'));
+    }, (error) => handleListenerError(error, 'fund_requests'));
   },
 
   // --- USERS (ADMIN/STAFF) ---
@@ -823,38 +823,63 @@ export const FirestoreDataService = {
         }
     };
     unreadLocal();
-    return onSnapshot(doc(db, 'config', key), (snap) => {
-      if (snap.exists()) {
-        callback(snap.data().value);
-        // Sync to local for offline support as a side effect
-        localStorage.setItem(key, typeof snap.data().value === 'string' ? snap.data().value : JSON.stringify(snap.data().value));
-      }
-    });
+    return onSnapshot(
+      doc(db, 'config', key),
+      (snap) => {
+        if (snap.exists()) {
+          callback(snap.data().value);
+          // Sync to local for offline support as a side effect
+          localStorage.setItem(
+            key,
+            typeof snap.data().value === 'string' ? snap.data().value : JSON.stringify(snap.data().value)
+          );
+        }
+      },
+      (error) => handleListenerError(error, `config/${key}`)
+    );
   },
 
   // Remove duplicate subscribeToProducts at line 801
   subscribeToFinancialConfigs: (callback: (configs: ProductFinancialConfig[]) => void) => {
     if (!db || !auth.currentUser) return () => {};
-    return onSnapshot(collectionGroup(db, 'configs'), (snap) => {
-      const configs = snap.docs.map((d) => mapFinancialConfigDoc(d));
-      callback(configs);
-    });
+    return onSnapshot(
+      collectionGroup(db, 'configs'),
+      (snap) => {
+        const configs = snap.docs.map((d) => mapFinancialConfigDoc(d));
+        callback(configs);
+      },
+      (error) => handleListenerError(error, 'financial_configs')
+    );
   },
 
   subscribeToDailyEntries: (callback: (entries: DailyFinancialEntry[]) => void) => {
     if (!db || !auth.currentUser) return () => {};
-    return onSnapshot(collection(db, 'daily_entries'), (snap) => {
-      const entries = snap.docs.map(doc => doc.data() as DailyFinancialEntry);
-      callback(entries);
-    });
+    return onSnapshot(
+      collection(db, 'daily_entries'),
+      (snap) => {
+        const entries = snap.docs.map((d) => ({
+          ...(d.data() as DailyFinancialEntry),
+          date: (d.data().date as string) || d.id,
+        }));
+        callback(entries);
+      },
+      (error) => handleListenerError(error, 'daily_entries')
+    );
   },
 
   subscribeToAllDailyFinanceData: (callback: (data: DailyFinanceData[]) => void) => {
     if (!db || !auth.currentUser) return () => {};
-    return onSnapshot(collection(db, 'daily_finance'), (snap) => {
-      const data = snap.docs.map(doc => doc.data() as DailyFinanceData);
-      callback(data);
-    });
+    return onSnapshot(
+      collection(db, 'daily_finance'),
+      (snap) => {
+        const data = snap.docs.map((d) => ({
+          ...(d.data() as DailyFinanceData),
+          date: (d.data().date as string) || d.id,
+        }));
+        callback(data);
+      },
+      (error) => handleListenerError(error, 'daily_finance')
+    );
   },
 
   // --- USER PREFERENCES (UI STATES) ---
@@ -876,26 +901,34 @@ export const FirestoreDataService = {
 
     if (db && auth.currentUser) {
       const docRef = doc(db, 'user_preferences', `${auth.currentUser.uid}_${key}`);
-      return onSnapshot(docRef, (snap) => {
-        if (snap.exists()) {
-          const val = snap.data().value;
-          callback(val);
-          localStorage.setItem(`pref_${key}`, JSON.stringify(val));
-        }
-      });
+      return onSnapshot(
+        docRef,
+        (snap) => {
+          if (snap.exists()) {
+            const val = snap.data().value;
+            callback(val);
+            localStorage.setItem(`pref_${key}`, JSON.stringify(val));
+          }
+        },
+        (error) => handleListenerError(error, `user_preferences/${key}`)
+      );
     }
     return () => {};
   },
 
   subscribeToClaudeAnalysis: (date: string, callback: (analysis: string | null) => void) => {
     if (!db || !auth.currentUser) return () => {};
-    return onSnapshot(doc(db, 'claude_analysis', date), (snap) => {
-      if (snap.exists()) {
-        callback(snap.data().analysis);
-      } else {
-        callback(null);
-      }
-    });
+    return onSnapshot(
+      doc(db, 'claude_analysis', date),
+      (snap) => {
+        if (snap.exists()) {
+          callback(snap.data().analysis);
+        } else {
+          callback(null);
+        }
+      },
+      (error) => handleListenerError(error, `claude_analysis/${date}`)
+    );
   },
 
   // --- SETTINGS ---
@@ -943,13 +976,17 @@ export const FirestoreDataService = {
         }
     };
     unreadLocal();
-    return onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-      if (snap.exists()) {
-        callback({ ...DEFAULT_SETTINGS, ...snap.data() } as AppSettings);
-      } else {
-        callback(DEFAULT_SETTINGS);
-      }
-    });
+    return onSnapshot(
+      doc(db, 'settings', 'global'),
+      (snap) => {
+        if (snap.exists()) {
+          callback({ ...DEFAULT_SETTINGS, ...snap.data() } as AppSettings);
+        } else {
+          callback(DEFAULT_SETTINGS);
+        }
+      },
+      (error) => handleListenerError(error, 'settings/global')
+    );
   },
 
   // --- PRODUCTS (INVENTORY) ---
